@@ -36,7 +36,10 @@ from urllib.parse import quote, unquote, urlparse
 SNAPSHOT_ORIGIN = "http://snapshot.local"
 SNAPSHOT_RENDER_URL = f"{SNAPSHOT_ORIGIN}/render.html"
 SNAPSHOT_ROUTE_GLOB = f"{SNAPSHOT_ORIGIN}/**"
-DEFAULT_RENDER_THEME_ID = "workbench"
+# The viewer's own default preset id (themeSettings.js DEFAULT_THEME_PRESET_ID). It used
+# to be the bare "workbench", which the browser still resolves -- to light, by an explicit
+# back-compat alias -- so the picture was right and only this side's BOOKKEEPING was wrong.
+DEFAULT_RENDER_THEME_ID = "workbench-light"
 DEFAULT_TIMEOUT_SECONDS = 300
 RENDER_BROWSER_STARTUP_TIMEOUT_MS = 15_000
 # `animate` is implicit-only: it sweeps a model's own declared animation. The STEP
@@ -45,7 +48,13 @@ SUPPORTED_RENDER_MODES = {"view", "orbit", "section", "list", "animate"}
 MESH_INPUT_KINDS = {"glb", "stl", "3mf"}
 MESH_SUPPORTED_RENDER_MODES = {"view", "orbit", "list"}
 TOPOLOGY_DISPLAY_MODES = {"hidden_edges", "hidden_lines_removed"}
-WORKBENCH_RENDER_THEME_IDS = {DEFAULT_RENDER_THEME_ID}
+# Every id that IS the workbench theme, because this set decides a render's default
+# dimensions (see default_render_size). With only the legacy "workbench" in it, asking for
+# the viewer's real preset by name -- `--theme workbench-light` -- fell through to the
+# non-workbench branch and silently rendered at 1200x900 instead of 1600x1200, despite
+# resolving to the identical theme in the browser. Pinned against the viewer's preset table
+# by tests/python/global/test_snapshot_viewer_theme_parity.py.
+WORKBENCH_RENDER_THEME_IDS = {"workbench", "workbench-light", "workbench-dark"}
 SUPPORTED_JOB_KEYS = frozenset(
     {
         "input",
