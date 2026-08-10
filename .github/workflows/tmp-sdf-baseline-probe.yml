@@ -1,0 +1,42 @@
+# TEMPORARY diagnostic. Delete once the sdfEquality baseline question is settled.
+#
+# The committed baseline was written during a rebase conflict resolution (e467e52d, +42
+# entries, 0 deletions) and CI has never validated it. It passes on macOS and fails on this
+# runner. This job regenerates it HERE and uploads the result so the two can be diffed:
+# if only the 42 added entries differ, they were mis-cut; if everything differs, the digest
+# is platform-dependent and the gate needs a design change rather than a re-cut.
+name: TMP SDF baseline probe
+
+on:
+  push:
+    branches: [release/0.4.0]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Runtime identity
+        run: |
+          node --version
+          node -p "process.platform + ' ' + process.arch + ' v8=' + process.versions.v8"
+      - name: Regenerate the baseline on this runner
+        run: |
+          IMPLICIT_SDF_BASELINE_WRITE=1 npm --prefix packages/implicitjs test -- \
+            src/lib/implicitCad/sdfEquality.test.js || true
+      - name: Diff against the committed baseline
+        run: |
+          git --no-pager diff --stat -- packages/implicitjs/src/lib/implicitCad/__baselines__/sdfEquality.json
+          echo "--- changed entry keys ---"
+          git --no-pager diff -U0 -- packages/implicitjs/src/lib/implicitCad/__baselines__/sdfEquality.json \
+            | grep -E '^[+-]\s*"' | sed 's/[[:space:]]*//' | cut -c1-90 | head -60
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdf-baseline-linux
+          path: packages/implicitjs/src/lib/implicitCad/__baselines__/sdfEquality.json
