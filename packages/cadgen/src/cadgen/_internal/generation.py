@@ -2346,15 +2346,19 @@ def generate_dxf_targets(
 
         _run_selected_specs(
             selected_specs,
-            # A drawing build is one opaque generator run with no countable stage, so it
-            # takes no progress sink; the board keeps its plain status text.
-            action=lambda spec, _progress_sink=None: _run_with_spec_generation_status(
+            # A drawing build DOES have countable stages -- DRAWING_PACKAGE declares
+            # parse/mesh/write, reported by the Node child while this process holds the
+            # lock -- so the sink is threaded through rather than dropped. It was dropped
+            # on the belief that a drawing is "one opaque generator run", which was true
+            # only of the Python half.
+            action=lambda spec, progress_sink=None: _run_with_spec_generation_status(
                 spec,
                 "gen_dxf",
                 lambda tracked_spec, reporter: run_script_generator(
                     tracked_spec, "gen_dxf", logger=logger, progress=reporter
                 ),
                 skip_if_current=_built_by_a_peer,
+                progress_sink=progress_sink,
                 logger=logger,
             ),
             logger=logger,

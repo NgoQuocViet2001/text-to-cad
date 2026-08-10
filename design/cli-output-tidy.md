@@ -6,8 +6,8 @@
 |---|---|
 | P0 parts inventory diet + compact stdout | **DONE** `1dd97067` |
 | P1 stdout is the result, pinned by a test | **DONE** `1d51f036` |
-| P2 progress parity | **MOSTLY** `7185b6f9`, `bb08b841` — `dxf gen` still opaque |
-| P3 standardize `--verbose` / `--debug` | **PARTIAL** — see §4 |
+| P2 progress parity | **DONE** `7185b6f9`, `bb08b841`, `+` |
+| P3 standardize `--verbose` / `--debug` | **DONE** for `--verbose`; `--debug` stays STEP-snapshot-only, see §4 |
 | P4 compact errors everywhere | **DONE** `bb08b841` |
 | P5 docs + regression tests | **DONE** (this file; two test modules) |
 
@@ -53,7 +53,7 @@ survivor because it pastes straight into `--focus` / `--hide` / `inspect`.
 | `cad artifact` | none → **shared phase bar** | ✓ |
 | `dxf artifact` | none → **shared phase bar** | ✓ |
 | `snapshot` (all 6 skills) | none → **phase lines** | ✗ (nothing to record) |
-| `dxf gen` | **still none** | ✓ |
+| `dxf gen` | none → **shared phase bar** | ✓ |
 | `implicit gen` | sink plumbed | ✓ |
 
 Snapshot was the sharpest: silent for its *entire* run, which on a cold assembly is a
@@ -72,9 +72,17 @@ rebuild, timings). No `--quiet` (an exit code plus `2>/dev/null` covers it) and 
 per-stage flags. `--format` stays on `inspect`, the one place a text rendering earns its
 keep.
 
-**Not finished:** `--verbose` is still missing from `dxf/dxf`, `urdf/urdf`, `srdf/srdf`,
-`sdf/sdf` and `urdf/validate`; `--debug` still exists only on `cad snapshot`. These are
-additive and safe to do piecemeal.
+`--verbose` now reaches every CLI that has one to give. Two corrections the work made to
+the survey that produced this list: `dxf/dxf` and `urdf/urdf` are not CLIs at all --
+`urdf/urdf` is the CLI *package* (no `__main__`, running it errors) whose entry is
+`validate`, and `dxf/scripts/dxf` was an empty directory holding nothing but stale
+bytecode, now deleted.
+
+`--debug` deliberately stays on `cad snapshot` alone. It reports how a render artifact
+RESOLVED -- generated vs imported, cache hit vs rebuild, selector re-extraction, resolution
+time -- and no other CLI has an equivalent question to answer: `gen` and `artifact` already
+report their outcome and package path on stdout, and a validator has nothing to resolve.
+Adding the flag elsewhere would mean inventing content for it.
 
 ## 5. What holds the line
 
