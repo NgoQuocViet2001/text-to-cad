@@ -39,7 +39,9 @@ SNAPSHOT_ROUTE_GLOB = f"{SNAPSHOT_ORIGIN}/**"
 DEFAULT_RENDER_THEME_ID = "workbench"
 DEFAULT_TIMEOUT_SECONDS = 300
 RENDER_BROWSER_STARTUP_TIMEOUT_MS = 15_000
-SUPPORTED_RENDER_MODES = {"view", "orbit", "section", "list"}
+# `animate` is implicit-only: it sweeps a model's own declared animation. The STEP
+# analogue is an animated --params sweep, which stays in `view`.
+SUPPORTED_RENDER_MODES = {"view", "orbit", "section", "list", "animate"}
 MESH_INPUT_KINDS = {"glb", "stl", "3mf"}
 MESH_SUPPORTED_RENDER_MODES = {"view", "orbit", "list"}
 TOPOLOGY_DISPLAY_MODES = {"hidden_edges", "hidden_lines_removed"}
@@ -56,6 +58,14 @@ SUPPORTED_JOB_KEYS = frozenset(
         "selection",
         "stepParameters",
         "stepParametersPath",
+        # Implicit CAD's own three surfaces. `graphics` is a THIRD viewer tab beside Theme
+        # and Display (detail, shadows, ambient occlusion, model colours), so it is a third
+        # option rather than being folded into --display. Parameters and animation are the
+        # implicit analogues of stepParameters: named separately because an implicit model
+        # is parameterized by its own descriptor, not by a STEP sidecar.
+        "graphics",
+        "implicitParameters",
+        "implicitAnimation",
         # A robot's pose. The STEP analogue is stepParameters; a robot is posed by joint
         # angle, so it gets its own key rather than overloading one that means a sidecar.
         "jointValues",

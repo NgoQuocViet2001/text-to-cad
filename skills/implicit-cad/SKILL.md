@@ -96,13 +96,13 @@ Use this skill's snapshot tool as a fast visual check, not as a substitute for d
 For simple static edits, one image is enough:
 
 ```bash
-node scripts/snapshot.mjs --input models/implicit-cad/<model>.implicit.js --output /tmp/implicit-review/<model>.png
+python scripts/snapshot --input models/implicit-cad/<model>.implicit.js --output /tmp/implicit-review/<model>.png
 ```
 
 For topology, periodicity, thin features, Boolean blends, object identity, color, or suspected framing issues, render a small packet in one CLI call so the browser, module, and runtime model are reused:
 
 ```bash
-node scripts/snapshot.mjs --job - <<'JSON'
+python scripts/snapshot --job - <<'JSON'
 {
   "input": "models/implicit-cad/<model>.implicit.js",
   "mode": "view",
@@ -123,7 +123,7 @@ Add `implicitParameters` at the job level for one parameter state, or on individ
 For animations, create a short GIF only when motion is part of the request:
 
 ```bash
-node scripts/snapshot.mjs --job - <<'JSON'
+python scripts/snapshot --job - <<'JSON'
 {
   "input": "models/implicit-cad/<model>.implicit.js",
   "mode": "animate",
@@ -146,14 +146,14 @@ When verification snapshots are generated, also include the saved PNG/GIF snapsh
 From this skill directory:
 
 ```bash
-node scripts/snapshot.mjs --input <model.implicit.js> --output <snapshot.png>
-node scripts/snapshot.mjs --input <model.implicit.js> --output <orbit.gif> --mode orbit
-node scripts/snapshot.mjs --job <render-job.json>
-node scripts/snapshot.mjs --job - --json
-node scripts/snapshot.mjs --help
+python scripts/snapshot --input <model.implicit.js> --output <snapshot.png>
+python scripts/snapshot --input <model.implicit.js> --output <orbit.gif> --mode orbit
+python scripts/snapshot --job <render-job.json>
+python scripts/snapshot --job - --json
+python scripts/snapshot --help
 ```
 
-Use `node scripts/snapshot.mjs --help` for the complete current command interface. The tool appends a UTC timestamp before the output extension. JSON jobs may be a single job, one job with multiple `outputs`, a raw array of jobs, or `{ "jobs": [...] }`; prefer a multi-output job for review packets because it avoids rebuilding the same artifact for each camera.
+Use `python scripts/snapshot --help` for the complete current command interface. The snapshot CLI is shared with every other rendering skill (`cadgen.snapshot_cli`) and driven by the same browser runtime the CAD Viewer uses, so a snapshot and the viewport are the same picture; this skill enables `.implicit.js` only. Theme settings live under one `--theme`, display settings under one `--display`, and implicit raymarch quality under `--graphics` — mirroring the viewer's three tabs. The tool appends a UTC timestamp before the output extension. JSON jobs may be a single job, one job with multiple `outputs`, a raw array of jobs, or `{ "jobs": [...] }`; prefer a multi-output job for review packets because it avoids rebuilding the same artifact for each camera.
 
 ## Generate Tool
 

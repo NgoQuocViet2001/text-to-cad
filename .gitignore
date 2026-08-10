@@ -27,6 +27,12 @@ node_modules
 dist
 coverage
 
+# The implicit CAD skill's generated browser runtimes are build outputs on develop and
+# are published only from build-test/main -- unlike `cad` and `dxf`, which track theirs.
+# scripts/dev/skills/setup-implicit-cad-skill-symlink.sh enforces that they stay untracked.
+skills/implicit-cad/scripts/snapshot/runtime/
+skills/implicit-cad/scripts/export/runtime/
+
 # Production CAD Viewer runtime dist is committed on main. On dev,
 # skills/cad-viewer/scripts/viewer must stay a symlink to viewer/.
 !skills/cad-viewer/scripts/viewer/dist/

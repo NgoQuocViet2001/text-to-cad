@@ -117,7 +117,12 @@ IMPLICIT_INPUT_SUFFIX = ".implicit.js"
 # An implicit model is raymarched from its module: there is no CAD topology, so no section
 # or list mode. It is deliberately never rendered from a baked GLB -- the picture must not
 # depend on an export having been built.
-IMPLICIT_SUPPORTED_RENDER_MODES = {"view", "orbit"}
+IMPLICIT_SUPPORTED_RENDER_MODES = {"view", "orbit", "animate"}
+
+# SUPPORTED_RENDER_MODES is the union across every kind -- "is that a mode at all?" -- so
+# each kind still has to name its own. STEP has no `animate`: a STEP model is swept through
+# an animated --params sweep in `view` mode, not by a declared animation.
+STEP_SUPPORTED_RENDER_MODES = {"view", "orbit", "section", "list"}
 
 # Imported lazily by ensure_render_job_step_artifact: only a STEP input needs it, and
 # importing it eagerly would drag OCP into a robot or implicit snapshot that never builds
@@ -135,6 +140,8 @@ class SnapshotOptions:
     theme_specified: bool = False
     display: object = ""
     display_specified: bool = False
+    graphics: object = ""
+    graphics_specified: bool = False
     camera: object = "iso"
     camera_specified: bool = False
     width: int | None = None
@@ -174,8 +181,8 @@ KIND_BLURBS: dict[str, str] = {
 }
 
 KIND_MODES: dict[str, frozenset[str]] = {
-    "step": frozenset(SUPPORTED_RENDER_MODES),
-    "stp": frozenset(SUPPORTED_RENDER_MODES),
+    "step": frozenset(STEP_SUPPORTED_RENDER_MODES),
+    "stp": frozenset(STEP_SUPPORTED_RENDER_MODES),
     "glb": frozenset(MESH_SUPPORTED_RENDER_MODES),
     "stl": frozenset(MESH_SUPPORTED_RENDER_MODES),
     "3mf": frozenset(MESH_SUPPORTED_RENDER_MODES),
@@ -189,6 +196,7 @@ KIND_MODES: dict[str, frozenset[str]] = {
 _MODE_BLURBS = {
     "view": "one still image per output (default)",
     "orbit": "360-degree turntable GIF",
+    "animate": "GIF sweeping the model's own declared animation",
     "section": "cutaway sweep",
     "list": "part occurrence refs as JSON; writes no files",
 }
@@ -226,6 +234,8 @@ def help_text(*, kinds: frozenset[str] | None = None, prog: str = "scripts/snaps
         "  --camera VALUE    a preset, an azimuth:elevation pair, or JSON with preset/position/target/up/zoom",
         "  --theme VALUE     see Theme below",
         "  --display VALUE   see Display below",
+        *(["  --graphics VALUE  implicit raymarch quality: inline JSON or a JSON file path"]
+          if "implicit" in enabled else []),
         "  --size-profile ID simple, diagnostic, labeled, assembly, presentation, orbit, contact-sheet",
         "  --width/--height  pixels, overriding the size profile",
         "  --json            print the render result as JSON on stdout",
@@ -344,6 +354,13 @@ def parse_snapshot_args(argv: Sequence[str]) -> SnapshotOptions:
         elif arg.startswith("--display="):
             options.display = arg[len("--display=") :]
             options.display_specified = True
+        elif arg == "--graphics":
+            options.graphics = parse_required_value(argv, index, arg)
+            options.graphics_specified = True
+            index += 1
+        elif arg.startswith("--graphics="):
+            options.graphics = arg[len("--graphics=") :]
+            options.graphics_specified = True
         elif arg == "--params":
             options.params = parse_required_value(argv, index, arg)
             options.params_specified = True
@@ -455,6 +472,7 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
             options.params_specified,
             options.params_path_specified,
             options.display_specified,
+            options.graphics_specified,
             options.theme_specified,
             options.camera_specified,
             option_focus_hide_specified(options),
@@ -473,6 +491,8 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
         next_job["stepParametersPath"] = options.params_path
     if options.display_specified:
         next_job["display"] = load_display_option(options.display, cwd=cwd)
+    if options.graphics_specified:
+        next_job["graphics"] = load_graphics_option(options.graphics, cwd=cwd)
     if options.camera_specified:
         next_job["camera"] = parse_camera_option(options.camera)
     render = dict(next_job.get("render") if is_plain_object(next_job.get("render")) else {})
@@ -541,6 +561,8 @@ def load_job_from_options(
         job["render"]["sizeProfile"] = options.size_profile
     if options.display_specified:
         job["display"] = load_display_option(options.display, cwd=resolved_cwd)
+    if options.graphics_specified:
+        job["graphics"] = load_graphics_option(options.graphics, cwd=resolved_cwd)
     if options.params_specified:
         job["stepParameters"] = parse_params_option(options.params)
     if options.params_path_specified:
@@ -551,6 +573,30 @@ def load_job_from_options(
     return job
 
 
+
+
+def load_graphics_option(raw_graphics: object, *, cwd: Path) -> dict[str, object]:
+    """Implicit CAD's graphics settings: inline JSON, or a path to a JSON file.
+
+    A third option beside --theme and --display because the viewer has a third tab for it.
+    Detail, shadows and ambient occlusion are raymarch quality knobs -- they are not part of
+    a saved theme, and they are not display modes.
+    """
+    text = str(raw_graphics or "").strip()
+    if not text:
+        return {}
+    if text.startswith("{"):
+        payload = load_json_text(text, "--graphics")
+    else:
+        graphics_path = Path(text)
+        if not graphics_path.is_absolute():
+            graphics_path = (cwd / graphics_path).resolve()
+        if not graphics_path.is_file():
+            raise SnapshotError(f"--graphics file does not exist: {graphics_path}")
+        payload = load_json_text(graphics_path.read_text(encoding="utf-8"), str(graphics_path))
+    if not is_plain_object(payload):
+        raise SnapshotError("--graphics must be a JSON object of implicit graphics settings")
+    return dict(payload)
 
 
 def input_kind(file_path: Path) -> str:
@@ -1157,6 +1203,11 @@ def resolve_step_render_job(
     mode = str(job.get("mode") or "view").strip().lower()
     if mode not in SUPPORTED_RENDER_MODES:
         raise SnapshotError(f"Unsupported render mode: {mode or '(missing)'}")
+    if mode not in STEP_SUPPORTED_RENDER_MODES:
+        supported = ", ".join(sorted(STEP_SUPPORTED_RENDER_MODES))
+        raise SnapshotError(
+            f"{mode} mode is not supported for STEP inputs; STEP supports: {supported}"
+        )
     if has_param_render and mode != "view":
         raise SnapshotError("stepParameters support only view mode; set display.mode for display-style changes")
     if has_param_render and (step_parameter_path is None or not step_parameter_path.exists()):
@@ -1270,10 +1321,29 @@ def resolve_drawing_render_job(
     )
 
 
-def drawing_preview_path(source: Path, *, force: bool = False) -> Path:
-    """Build/refresh the drawing package and return the preview.glb inside it."""
-    from cadgen.dxf_artifact import build_dxf_artifact
+def build_dxf_artifact(*args, **kwargs):
+    """Module-level indirection over the drawing builder.
 
+    Deferred so importing this CLI does not drag ezdxf in for a skill that never renders a
+    drawing, and module-level (rather than an import inside the caller) so it is one
+    patchable seam rather than a hidden one.
+    """
+    from cadgen.dxf_artifact import build_dxf_artifact as build
+
+    return build(*args, **kwargs)
+
+
+def drawing_preview_path(source: Path, *, force: bool = False) -> Path:
+    """Build/refresh the drawing package and return the preview.glb inside it.
+
+    The build is `artifact_build(DRAWING_PACKAGE, ...)` inside build_dxf_artifact -- the
+    same locked path `scripts/artifact` and the CAD Viewer take, so a snapshot that has to
+    make a package current cannot race one of them.
+    """
+    if not source.name.lower().endswith((".dxf", ".py")):
+        raise SnapshotError(
+            f"snapshot input must be a .dxf file or a gen_dxf() Python source: {source}"
+        )
     if not source.is_file():
         raise SnapshotError(f"snapshot input does not exist: {source}")
     payload = build_dxf_artifact(repo_root=Path.cwd(), source_path=source, force=force)

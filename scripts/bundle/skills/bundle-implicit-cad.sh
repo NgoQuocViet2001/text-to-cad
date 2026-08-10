@@ -8,6 +8,8 @@ export BUNDLE_REPO_ROOT="$REPO_ROOT"
 source "$SCRIPT_DIR/../lib/vendor.sh"
 # shellcheck source=../lib/node_builders.sh
 source "$SCRIPT_DIR/../lib/node_builders.sh"
+# shellcheck source=../lib/snapshot_runtime.sh
+source "$SCRIPT_DIR/../lib/snapshot_runtime.sh"
 
 MODE="write"
 CLEAN=0
@@ -31,6 +33,12 @@ BUILDER_ENTRIES=(
   "$REPO_ROOT/packages/cadjs/bin/implicitClosureHooks.mjs"
   "$REPO_ROOT/packages/implicitjs/src/lib/implicitCad/meshWorkerEntry.js"
 )
+# The headless browser runtime the snapshot CLI drives. Built from the SAME cadjs
+# entrypoint the CAD Viewer and every other rendering skill use, so an implicit snapshot and
+# the viewport are the same picture by construction. A skill may not reach into another
+# skill's files, so each gets its own generated copy.
+SNAPSHOT_RUNTIME_DIR="$REPO_ROOT/skills/implicit-cad/scripts/snapshot/runtime"
+SNAPSHOT_BUILD_DEPS_DIR="${IMPLICIT_CAD_SNAPSHOT_BUILD_DEPS_DIR:-$REPO_ROOT/tmp/implicit-cad-snapshot-build}"
 CHECK_DIR="${IMPLICIT_CAD_SKILL_BUNDLE_CHECK_DIR:-$REPO_ROOT/tmp/implicit-cad-skill-runtime-check}"
 
 usage() {
@@ -147,10 +155,11 @@ check_development_layout() {
 
 require_file "$IMPLICITJS_PACKAGE_DIR/package.json" "implicitjs package"
 require_dir "$IMPLICITJS_PACKAGE_DIR/src" "implicitjs source"
-require_file "$IMPLICITJS_PACKAGE_DIR/scripts/snapshot.mjs" "implicit CAD snapshot CLI"
+require_file "$REPO_ROOT/skills/implicit-cad/scripts/snapshot/__main__.py" "implicit CAD snapshot CLI"
 require_file "$IMPLICITJS_PACKAGE_DIR/scripts/export.mjs" "implicit CAD export CLI"
 require_python_package "$CADGEN_PACKAGE_DIR" cadgen
 ensure_node_builder_deps
+ensure_snapshot_runtime_deps "$SNAPSHOT_BUILD_DEPS_DIR" 1
 
 if [ "$CLEAN" -eq 1 ]; then
   rm -rf "$CHECK_DIR"
@@ -165,6 +174,10 @@ check_builders() {
     "skills/implicit-cad/scripts/packages/cadjs/bin" \
     "Run scripts/bundle/bundle-skill.sh implicit-cad and commit skills/implicit-cad/scripts/packages/cadjs." \
     "${BUILDER_ENTRIES[@]}"
+  build_snapshot_runtime "$CHECK_DIR/snapshot-runtime" "$SNAPSHOT_BUILD_DEPS_DIR"
+  check_snapshot_runtime "$SNAPSHOT_RUNTIME_DIR" "$CHECK_DIR/snapshot-runtime" \
+    "skills/implicit-cad/scripts/snapshot/runtime" \
+    "Run scripts/bundle/bundle-skill.sh implicit-cad and commit skills/implicit-cad/scripts/snapshot/runtime."
 }
 
 if [ "$MODE" = "check" ] && [ -L "$IMPLICITJS_RUNTIME_DIR" ]; then
@@ -200,4 +213,6 @@ else
   echo "Bundled skills/implicit-cad/scripts/packages/cadgen"
   bundle_node_builders "$BUILDERS_RUNTIME_DIR" "${BUILDER_ENTRIES[@]}"
   echo "Bundled skills/implicit-cad/scripts/packages/cadjs/bin"
+  build_snapshot_runtime "$SNAPSHOT_RUNTIME_DIR" "$SNAPSHOT_BUILD_DEPS_DIR"
+  echo "Bundled skills/implicit-cad/scripts/snapshot/runtime"
 fi

@@ -1,13 +1,18 @@
-"""The DXF skill's snapshot: a drawing, rendered as its 3D flat pattern.
+"""The implicit skill's snapshot: an .implicit.js model, raymarched.
 
 Everything about rendering — arguments, job schema, theme, display, the headless browser —
 is `cadgen.snapshot_cli`, shared with every other skill that renders. What is local is this
 file: which input kinds this skill accepts, and where its own bundled browser runtime lives.
 
-The drawing resolver makes the package current through `artifact_build(DRAWING_PACKAGE)` —
-the same locked build `scripts/artifact` and the CAD Viewer run — then hands the baked
-preview.glb to the shared mesh path. Sharing the CLI is what gives a drawing snapshot
---display, --job, and the full mode set, none of which the hand-written shell had.
+This replaces a standalone 978-line Node CLI with its own Playwright driver, its own render
+runtime and its own job schema. The browser side was already unified — cadjs's
+headlessRenderEntry dispatches implicit jobs to implicitjs — so only the driver disagreed,
+and disagreeing was the whole cost: a different job schema, a different theme option, no
+--display at all.
+
+An implicit model is ALWAYS raymarched. It is never rendered from a baked GLB export, so
+there is no artifact to build and nothing for this skill to coordinate — which is why it
+takes no generation lock while the STEP and DXF snapshots do.
 """
 
 from __future__ import annotations
@@ -24,7 +29,7 @@ for _runtime_path in (SCRIPTS_DIR, SCRIPTS_DIR / "packages", SCRIPTS_DIR / "pack
 from cadgen.snapshot_cli import run_snapshot_cli
 
 RUNTIME_DIR = Path(__file__).resolve().parent / "runtime"
-KINDS = ("dxf",)
+KINDS = ("implicit",)
 
 
 def main(argv: list[str] | None = None) -> int:
