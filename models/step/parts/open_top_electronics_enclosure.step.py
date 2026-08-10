@@ -28,7 +28,7 @@ STANDOFF_LOCATIONS = ((-35.0, -25.0), (-35.0, 25.0), (35.0, -25.0), (35.0, 25.0)
 
 
 def gen_step():
-    """Return the open-top electronics enclosure benchmark model in millimeters."""
+    """Return the open-top electronics enclosure model in millimeters."""
     inner_length = OUTER_LENGTH - 2.0 * WALL_THICKNESS
     inner_width = OUTER_WIDTH - 2.0 * WALL_THICKNESS
     cavity_height = OUTER_HEIGHT - FLOOR_THICKNESS
@@ -71,5 +71,5 @@ def gen_step():
                 )
 
     part = enclosure.part
-    part.label = "benchmark_05_open_top_electronics_enclosure_bosses"
+    part.label = "open_top_electronics_enclosure_bosses"
     return part

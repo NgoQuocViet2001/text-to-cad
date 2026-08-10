@@ -2,7 +2,7 @@ from math import tau
 
 from build123d import Align, BuildPart, Cylinder, Location, Locations, Mode
 
-from benchmark_common import circular_edges, polar_point, safe_fillet
+from part_common import circular_edges, polar_point, safe_fillet
 
 
 OUTER_DIAMETER = 80.0
@@ -15,7 +15,7 @@ OUTER_FILLET = 1.5
 
 
 def gen_step():
-    """Return the circular flange benchmark model in millimeters."""
+    """Return the circular flange model in millimeters."""
     with BuildPart() as flange:
         Cylinder(
             radius=OUTER_DIAMETER / 2.0,
@@ -46,5 +46,5 @@ def gen_step():
     edges.extend(circular_edges(part, radius=OUTER_DIAMETER / 2.0, axis="z", coordinate=0.0))
     edges.extend(circular_edges(part, radius=OUTER_DIAMETER / 2.0, axis="z", coordinate=THICKNESS))
     part = safe_fillet(part, edges, radius=OUTER_FILLET)
-    part.label = "benchmark_02_circular_flange_bolt_pattern"
+    part.label = "circular_flange_bolt_pattern"
     return part
