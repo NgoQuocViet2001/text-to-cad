@@ -857,17 +857,64 @@ class BatchSnapshotRenderer:
             self.playwright = None
         self.page = None
         self.started = False
+# --- progress ----------------------------------------------------------------------
+# A snapshot was silent for its ENTIRE run. On a cold assembly that is an artifact build
+# plus a browser launch plus a render -- tens of seconds of nothing on either stream, which
+# is indistinguishable from a hang. Every other long operation in this repo reports (a
+# generation lock now says why it is waiting; `gen` paints a phase bar), and this did not.
+#
+# Same shape as those: a self-erasing line on a tty, and on a non-tty -- an agent's captured
+# log -- one durable line per PHASE CHANGE rather than a bar smeared over hundreds of
+# writes. Never on stdout: stdout is the result.
+class SnapshotProgress:
+    """Reports what a snapshot is doing, to stderr, without becoming part of the result."""
+
+    __slots__ = ("_stream", "_is_tty", "_width", "_last", "_enabled")
+
+    def __init__(self, stream: Any = None, *, enabled: bool = True) -> None:
+        self._stream = stream if stream is not None else sys.stderr
+        self._is_tty = bool(getattr(self._stream, "isatty", lambda: False)())
+        self._enabled = bool(enabled)
+        self._width = 0
+        self._last = ""
+
+    def phase(self, text: str) -> None:
+        if not self._enabled or text == self._last:
+            return
+        self._last = text
+        if self._is_tty:
+            padding = max(0, self._width - len(text))
+            self._width = len(text)
+            print(f"\r{text}{' ' * padding}", end="", file=self._stream, flush=True)
+        else:
+            print(text, file=self._stream, flush=True)
+
+    def clear(self) -> None:
+        if self._enabled and self._is_tty and self._width:
+            print(f"\r{' ' * self._width}\r", end="", file=self._stream, flush=True)
+        self._width = 0
+
+
+NULL_SNAPSHOT_PROGRESS = SnapshotProgress(enabled=False)
+
+
 async def render_resolved_job_packet(
     packet: Mapping[str, object],
     *,
     runtime_dir: Path,
     renderer: BatchSnapshotRenderer | None = None,
+    progress: SnapshotProgress | None = None,
 ) -> dict[str, object]:
     snapshot_renderer = renderer or BatchSnapshotRenderer(runtime_dir)
+    report = progress if progress is not None else NULL_SNAPSHOT_PROGRESS
     started = time.perf_counter()
     results: list[dict[str, object]] = []
+    total = len(packet["jobs"])
     try:
-        for job in packet["jobs"]:
+        for index, job in enumerate(packet["jobs"], start=1):
+            label = str(job.get("input") or "")
+            counter = f" {index}/{total}" if total > 1 else ""
+            report.phase(f"rendering{counter} {label}".rstrip())
             result = await snapshot_renderer.render(job)
             # The browser result knows nothing about artifact resolution; --debug
             # diagnostics are attached at resolve time, so merge them into the
@@ -878,6 +925,7 @@ async def render_resolved_job_packet(
                 result = {**result, "debug": debug_info}
             results.append(result if packet["single"] else {"input": job.get("input"), **result})
     finally:
+        report.clear()
         await snapshot_renderer.close()
     if packet["single"]:
         return results[0]

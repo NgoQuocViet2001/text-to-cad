@@ -73,6 +73,7 @@ from cadgen.snapshot_core import (
     SUPPORTED_OUTPUT_KEYS,
     SUPPORTED_RENDER_MODES,
     SnapshotError,
+    SnapshotProgress,
     TOPOLOGY_DISPLAY_MODES,
     WORKBENCH_RENDER_THEME_IDS,
     theme_id_for_job,
@@ -1489,9 +1490,18 @@ async def run_render_cli_async(
     if options.help:
         stdout.write(help_text(kinds=enabled, prog=prog))
         return 0
+    # Resolution is where a STEP or drawing package gets built, and on a cold model that is
+    # the SLOWEST part of a snapshot -- longer than the render. It has to report before it
+    # starts, not after.
+    progress = SnapshotProgress()
     raw_payload = load_job_from_options(options, stdin=stdin, cwd=cwd)
+    progress.phase("resolving input (building render artifacts if needed)")
     packet = resolve_render_job_packet(raw_payload, cwd=cwd, kinds=enabled)
-    result = await render_resolved_job_packet(packet, runtime_dir=Path(runtime_dir))
+    progress.phase("starting browser")
+    result = await render_resolved_job_packet(
+        packet, runtime_dir=Path(runtime_dir), progress=progress
+    )
+    progress.clear()
     write_render_outputs(result)
     print_render_result(result, json_output=options.json, stdout=stdout)
     return 0
