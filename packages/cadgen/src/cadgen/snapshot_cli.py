@@ -233,7 +233,7 @@ def help_text(*, kinds: frozenset[str] | None = None, prog: str = "scripts/snaps
         "  --job PATH        one render job, an array of them, or { \"jobs\": [...] }; - reads stdin",
         "  --camera VALUE    a preset, an azimuth:elevation pair, or JSON with preset/position/target/up/zoom",
         "  --theme VALUE     see Theme below",
-        "  --display VALUE   see Display below",
+        *(["  --display VALUE   see Display below"] if has_step else []),
         *(["  --graphics VALUE  implicit raymarch quality: inline JSON or a JSON file path"]
           if "implicit" in enabled else []),
         "  --size-profile ID simple, diagnostic, labeled, assembly, presentation, orbit, contact-sheet",
@@ -254,15 +254,13 @@ def help_text(*, kinds: frozenset[str] | None = None, prog: str = "scripts/snaps
         "  A saved theme name, inline JSON theme settings, or a path to a theme JSON file.",
         f"  Default: {DEFAULT_RENDER_THEME_ID}. Projection is a theme trait (the workbench themes are",
         "  orthographic; the presentation stage themes are perspective).",
-        "",
-        "Display (--display)  everything under the viewer's Display tab, in one option.",
-        "  A mode name (solid, rendered, transparent, unshaded, wireframe"
-        + (", hidden_edges, hidden_lines_removed" if has_step else "")
-        + "),",
-        "  inline JSON display settings, or a path to a display JSON file.",
     ]
     if has_step:
         lines += [
+            "",
+            "Display (--display)  everything under the viewer's Display tab, in one option.",
+            "  A mode name (solid, rendered, transparent, unshaded, wireframe, hidden_edges,",
+            "  hidden_lines_removed), inline JSON display settings, or a JSON file path.",
             "  Edge styling and the exploded view live here, e.g.",
             '  {"mode":"rendered","exploded":{"amount":0.7},"edges":{"color":"#132232"}}.',
             "  Exploded is one 0..1 slider; the layout is automatic.",
@@ -1479,6 +1477,15 @@ async def run_render_cli_async(
 ) -> int:
     enabled = enabled_kinds(kinds)
     options = parse_snapshot_args(argv)
+    if options.display_specified and "step" not in enabled:
+        # Display settings ARE STEP topology settings: mode, clip, exploded and edges all
+        # need occurrences and CAD edges. Every other kind already rejected all four at
+        # resolve time, so accepting the flag only meant erroring later or doing nothing
+        # at all. renderJobContext gates job.display on the same condition.
+        raise SnapshotError(
+            "--display applies to STEP inputs only: its settings (mode, clip, exploded, "
+            "edges) are CAD topology settings, and this skill renders none"
+        )
     if options.help:
         stdout.write(help_text(kinds=enabled, prog=prog))
         return 0

@@ -130,13 +130,21 @@ class GeneratedHelpTests(unittest.TestCase):
         for present in ("--params", "--focus", "section", "--view-labels"):
             self.assertIn(present, cad_help)
 
-    def test_theme_and_display_are_each_one_option_everywhere(self):
+    def test_theme_is_one_option_everywhere(self):
         for skill, kinds in SKILL_KINDS.items():
             with self.subTest(skill=skill):
                 text = help_text(kinds=enabled_kinds(kinds))
                 self.assertIn("--theme", text)
-                self.assertIn("--display", text)
                 self.assertNotIn("--appearance", text)
+
+    def test_display_is_offered_only_where_it_does_something(self):
+        # Display settings ARE STEP topology settings -- mode, clip, exploded and edges all
+        # need occurrences and CAD edges -- and every non-STEP resolver rejected all four.
+        # Advertising the flag everywhere meant advertising an option that only errors.
+        self.assertIn("--display", help_text(kinds=enabled_kinds(SKILL_KINDS["cad"])))
+        for skill in ("dxf", "implicit-cad", "urdf", "srdf", "sdf"):
+            with self.subTest(skill=skill):
+                self.assertNotIn("--display", help_text(kinds=enabled_kinds(SKILL_KINDS[skill])))
 
 
 if __name__ == "__main__":

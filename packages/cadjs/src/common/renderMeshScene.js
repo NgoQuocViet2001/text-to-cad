@@ -676,14 +676,18 @@ export function renderJobContext(meshData, job = {}) {
   const sourceKind = String(job.resolved?.kind || job.kind || meshData?.sourceFormat || "").trim().toLowerCase();
   const stepDisplayEnabled = sourceKind === "step" || sourceKind === "stp";
   const displaySettings = normalizeDisplaySettings(stepDisplayEnabled ? job.display : undefined);
-  // Projection is a theme trait (Light/Dark are orthographic, stage themes
-  // perspective); an explicit job display projection still overrides it, and
-  // non-STEP sources keep their historical perspective framing.
+  // Projection is a THEME trait, honoured by every format -- the same rule the viewer
+  // adopted in U1. An explicit job display projection still overrides it.
+  //
+  // Non-STEP sources used to be forced to PERSPECTIVE here regardless of the theme
+  // ("historical perspective framing"), which had a consequence nobody was reading it for:
+  // the tight frame that makes a render fill its canvas is orthographic-only, so every
+  // mesh, drawing, implicit and robot snapshot silently skipped it and sat in a sea of
+  // empty space while STEP filled its frame. Measured on tom.urdf: the gate reported
+  // usePerspectiveCamera=true and the tight frame never ran.
   const projection = normalizeCameraProjection(
     job.display?.projection,
-    stepDisplayEnabled
-      ? normalizeCameraProjection(theme?.projection, CAMERA_PROJECTION.ORTHOGRAPHIC)
-      : CAMERA_PROJECTION.PERSPECTIVE
+    normalizeCameraProjection(theme?.projection, CAMERA_PROJECTION.ORTHOGRAPHIC)
   );
   const displayMode = displaySettings.mode;
   const bounds = meshData.bounds || boundsFromVertices(meshData.vertices || []);

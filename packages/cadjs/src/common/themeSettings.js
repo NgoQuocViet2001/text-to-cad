@@ -1558,6 +1558,11 @@ const SNAPSHOT_THEME_SETTINGS = Object.freeze({
   ...WORKBENCH_LIGHT_THEME_PRESET_SETTINGS,
   floor: {
     ...WORKBENCH_LIGHT_THEME_PRESET_SETTINGS.floor,
+    // Stated, not inherited. Workbench already disables the floor plane, so nothing
+    // catches a shadow and this is inert today -- but "a snapshot casts no shadow" is a
+    // property of THIS theme, and a theme that holds it only by accident of another
+    // setting loses it silently the moment that setting changes.
+    shadowOpacity: 0,
     ...createFloorGridSettings(WORKBENCH_LIGHT_FLOOR_COLOR, { enabled: false, opacity: 0 }),
     ...createFloorAxisSettings(WORKBENCH_LIGHT_FLOOR_COLOR, { enabled: false, opacity: 0 })
   }
