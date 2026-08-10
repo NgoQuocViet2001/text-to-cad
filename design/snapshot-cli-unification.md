@@ -7,9 +7,9 @@
 | S0 `--appearance` → `--theme`, hard rename | **DONE** `1e8d59ed` |
 | S1 shared CLI shell + kind registry in cadgen | **DONE** `276002fc` |
 | S2 CAD / DXF / implicit re-pointed at it | **DONE** `5f008ddc` |
-| S3 urdf / srdf / sdf gain snapshot | |
+| S3 urdf / srdf / sdf gain snapshot | **DONE** `b8dc2e2f` |
 | S4 theme + display pinned to the viewer's | **DONE** `e0f6cfa3` |
-| S5 bundles, tests, skill docs | partial — implicit SKILL.md done |
+| S5 bundles, tests, skill docs | **DONE** |
 
 S4 ran before S3: it is what the drift in §1 was actually about, and it is small.
 
@@ -27,6 +27,16 @@ S4 ran before S3: it is what the drift in §1 was actually about, and it is smal
   `graphics`, `implicitParameters`/`implicitAnimation`, and `animate` mode. They moved
   into the shared schema. Adding `animate` there meant STEP started accepting it, so STEP
   now names its own mode set.
+- **The rejection must not name another skill.** Skills install independently, so
+  "Use the dxf skill's snapshot for it" asserts something unknowable. A refusal states
+  what the running skill accepts and stops.
+- **A snapshot should not default to a viewer theme at all.** `snapshot` (render-only,
+  absent from the picker) is Workbench Light minus the ground grid and origin axis: helpful
+  orientation in a live viewport, geometry-shaped contrast in a still image.
+- **Robot snapshot cost three stdlib skills their zero dependencies.** urdf/srdf/sdf were
+  pure-Python validators; each now carries a vendored cadgen, a 1.2 MB browser runtime and
+  Playwright. They track the runtime like cad/dxf rather than gitignoring it like
+  implicit-cad — worth revisiting if repo size matters more than clone-and-run.
 - **`--graphics` is a third option, not part of `--display`.** The viewer has a third tab
   for implicit graphics beside Theme and Display, so the CLI mirrors that rather than
   folding raymarch quality into display settings.
