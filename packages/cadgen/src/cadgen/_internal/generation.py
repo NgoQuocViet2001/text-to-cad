@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import io
 import importlib.util
+import json
 import math
 import os
 import shutil
@@ -2190,9 +2191,36 @@ def generate_step_targets(
     step_options: StepImportOptions | None = None,
     force: bool = False,
     verbose: bool = False,
+    json_output: bool = False,
 ) -> int:
+    """Build render packages for ``targets``. Returns the process exit code.
+
+    ``json_output`` additionally prints one JSON line per target to STDOUT. The exit code
+    alone cannot say WHICH targets were rebuilt and which were already current, and the
+    logger's prose goes to stderr by design -- so without this a caller reading the streams
+    apart had no machine-readable result at all.
+    """
     tool_name = "scripts/gen"
     logger = CliLogger("scripts/gen", verbose=verbose)
+    reported: list[dict[str, object]] = []
+
+    def _emit(spec: EntrySpec, outcome: str) -> None:
+        if not json_output:
+            return
+        reported.append(
+            {
+                "ok": True,
+                "sourceRef": spec.source_ref,
+                "cadPath": spec.cad_ref,
+                "kind": spec.kind,
+                "outcome": outcome,
+                "packagePath": _display_path(render_package_dir(spec.entry_path)),
+            }
+        )
+
+    def _flush() -> None:
+        for entry in reported:
+            print(json.dumps(entry, separators=(",", ":")))
     all_specs, selected_specs, target_output_paths = _selected_specs_for_targets(
         targets,
         step_options=step_options,
@@ -2229,10 +2257,12 @@ def generate_step_targets(
         if current_specs:
             for spec in current_specs:
                 logger.info(f"{spec.cad_ref} is current; skipped recompose")
+                _emit(spec, "current")
             current_refs = {spec.source_ref for spec in current_specs}
             selected_specs = [spec for spec in selected_specs if spec.source_ref not in current_refs]
             if not selected_specs:
                 logger.total()
+                _flush()
                 return 0
     entries_by_step_path = _entries_by_step_path([*all_specs, *selected_specs])
 
@@ -2266,13 +2296,16 @@ def generate_step_targets(
             logger=logger,
         )
 
-    _run_selected_specs(
+    results = _run_selected_specs(
         selected_specs,
         action=generate_step,
         logger=logger,
         success_message=_generated_python_glb_summary,
     )
+    for spec, result in zip(selected_specs, results):
+        _emit(spec, "skipped-peer" if isinstance(result, _SkippedGeneration) else "built")
     logger.total()
+    _flush()
     return 0
 
 
