@@ -37,6 +37,17 @@ S4 ran before S3: it is what the drift in §1 was actually about, and it is smal
   pure-Python validators; each now carries a vendored cadgen, a 1.2 MB browser runtime and
   Playwright. They track the runtime like cad/dxf rather than gitignoring it like
   implicit-cad — worth revisiting if repo size matters more than clone-and-run.
+- **Non-STEP snapshots were framed loose because they were rendered PERSPECTIVE.**
+  `renderJobContext` forced every non-STEP source to a perspective camera regardless of the
+  theme ("historical perspective framing"), and `applyTightOrthographicFrame` — the pass
+  that fits the canvas to the projected geometry — is orthographic-only, so it silently
+  never ran. Measured: STEP `usePerspectiveCamera=false` and the frame tightened
+  24.6 → 20.8; STL and URDF `=true` and it was skipped. Projection is now a theme trait for
+  every format, matching the viewer's own U1 rule. The robot went from about a quarter of
+  the frame to filling it.
+- **`--display` is STEP-only.** Its settings are CAD topology settings and every non-STEP
+  resolver already rejected all four, so offering it elsewhere advertised an option that
+  could only error. `renderJobContext` had always gated `job.display` the same way.
 - **`--graphics` is a third option, not part of `--display`.** The viewer has a third tab
   for implicit graphics beside Theme and Display, so the CLI mirrors that rather than
   folding raymarch quality into display settings.
@@ -71,8 +82,11 @@ render every format in this document; only the drivers disagree.
 
 `snapshot_core.DEFAULT_RENDER_THEME_ID` is `"workbench"`. The viewer has no such preset —
 its ids are `workbench-light` and `workbench-dark` (`packages/cadjs/src/common/themeSettings.js`).
-The snapshot's default theme id cannot resolve against the viewer's preset table, which is
-the sharpest available proof that the two sides were never actually pinned together.
+
+**Corrected during S4:** the id resolves fine, through an explicit back-compat alias in the
+browser, so the theme was never wrong. The drift is in the bookkeeping —
+`WORKBENCH_RENDER_THEME_IDS` also decides default DIMENSIONS, so the viewer's real preset
+names fell through to a different render size. See §0.
 
 ## 2. Decisions
 
@@ -117,8 +131,7 @@ Theme lives under one `--theme`.** Neither grows per-setting flags.
 ```
 packages/cadgen/src/cadgen/
   snapshot_core.py     render/driver core (exists)
-  snapshot_kinds.py    one resolver per input kind + what artifact it needs   NEW
-  snapshot_cli.py      the CLI shell: args, overrides, dispatch, run          NEW
+  snapshot_cli.py      the CLI shell + every kind resolver                    NEW
 
 skills/<skill>/scripts/snapshot/__main__.py   ~30 lines: KINDS + runtime dir
 ```
@@ -138,9 +151,9 @@ Every resolver lives in cadgen, not in a skill. A skill may not import another s
 (AGENTS.md), and the robot resolver is needed by three skills at once, so the registry has to
 sit under `packages/`. A skill selects rows; it does not own them.
 
-An input kind the running skill does not list is rejected by name, with a pointer to the
-skill that does own it — `.implicit.js` from the CAD skill says so rather than failing on a
-missing resolver.
+An input kind the running skill does not list is rejected by name, stating what this skill
+accepts. It does NOT name the skill that owns the format: skills install independently, so
+pointing at one asserts something unknowable.
 
 ### Why one bundle, copied six times
 
@@ -161,7 +174,9 @@ written in the final vocabulary.
 overrides, `load_job_from_options`, `input_kind`, `KIND_RESOLVERS`, `resolve_render_job*`,
 `run_render_cli` leave the CAD skill for cadgen, parameterized by allowed kinds and runtime
 dir. The three kind resolvers (`resolve_step_render_job`, `resolve_implicit_render_job`,
-`resolve_robot_render_job`) go with them into `snapshot_kinds.py`.
+`resolve_robot_render_job`, `resolve_drawing_render_job`) go with them. They landed in
+`snapshot_cli.py` rather than a separate `snapshot_kinds.py`: resolution and the argument
+surface are one concern, and splitting them bought nothing but an import.
 
 **S2 — the three existing skills re-point.** CAD and DXF become declarations. The implicit
 skill drops `snapshot.mjs`, its `snapshot-runtime/`, and the `.mjs` shim, and gains a Python
