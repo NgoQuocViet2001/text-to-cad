@@ -317,8 +317,8 @@ Production users should continue cloning `main`; developers should treat
    what inputs it expects, what it produces, and how to validate the work.
 3. Prefer small files in `references/` and reusable scripts in `scripts/` over
    long inline instructions.
-4. Add or update focused fixtures, tests, or benchmark cases when skill behavior
-   changes so regressions are measurable.
+4. Add or update focused fixtures or tests when skill behavior changes so
+   regressions are measurable.
 5. Validate with the smallest relevant check before broad repo checks.
 
 Generated artifacts should not become skill logic unless they are intentional
@@ -374,6 +374,6 @@ as `.venv/`, `node_modules/`, `.vite/`, `dist/`, `tmp/`, or local credentials.
 Generated runtime changes should come from the production-output workflow, not
 manual edits inside generated runtime folders.
 
-CAD exchange files, generated render/topology assets, `assets/**`, and
-`benchmarks/**` may be LFS-tracked. Never disable LFS filters for `git add`,
-commits, or other object-writing operations.
+CAD exchange files, generated render/topology assets, and `assets/**` may be
+LFS-tracked. Never disable LFS filters for `git add`, commits, or other
+object-writing operations.

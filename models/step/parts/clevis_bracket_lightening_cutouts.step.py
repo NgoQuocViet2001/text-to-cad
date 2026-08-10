@@ -15,7 +15,7 @@ from build123d import (
     extrude,
 )
 
-from benchmark_common import rounded_triangle_points, safe_fillet
+from part_common import rounded_triangle_points, safe_fillet
 
 
 BASE_LENGTH = 120.0
@@ -121,7 +121,7 @@ def _subtract_rounded_triangle(vertices: list[tuple[float, float]]):
 
 
 def gen_step():
-    """Return the clevis bracket benchmark model in millimeters."""
+    """Return the clevis bracket model in millimeters."""
     positive_lug_y_min = LUG_GAP_Y / 2.0 + LUG_THICKNESS_Y
     negative_lug_y_min = -LUG_GAP_Y / 2.0
 
@@ -160,5 +160,5 @@ def gen_step():
 
     part = bracket.part
     part = safe_fillet(part, _lug_base_edges(part), radius=LUG_FILLET)
-    part.label = "benchmark_06_aerospace_clevis_bracket_lightening_cutouts"
+    part.label = "aerospace_clevis_bracket_lightening_cutouts"
     return part

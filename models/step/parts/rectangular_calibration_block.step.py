@@ -1,6 +1,6 @@
 from build123d import Align, Box, BuildPart, Cylinder, Location, Locations, Mode
 
-from benchmark_common import line_edges_at_z, safe_chamfer
+from part_common import line_edges_at_z, safe_chamfer
 
 
 LENGTH = 100.0
@@ -12,7 +12,7 @@ TOP_CHAMFER = 2.0
 
 
 def gen_step():
-    """Return the rectangular calibration block benchmark model in millimeters."""
+    """Return the rectangular calibration block model in millimeters."""
     with BuildPart() as block:
         Box(LENGTH, WIDTH, HEIGHT, align=(Align.CENTER, Align.CENTER, Align.MIN))
 
@@ -27,5 +27,5 @@ def gen_step():
 
     part = block.part
     part = safe_chamfer(part, line_edges_at_z(part, HEIGHT), length=TOP_CHAMFER)
-    part.label = "benchmark_01_rectangular_calibration_block"
+    part.label = "rectangular_calibration_block"
     return part

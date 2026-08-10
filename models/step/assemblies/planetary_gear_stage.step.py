@@ -1,4 +1,6 @@
+import sys
 from math import tau
+from pathlib import Path
 
 from build123d import (
     Align,
@@ -15,7 +17,12 @@ from build123d import (
     extrude,
 )
 
-from benchmark_common import polar_point, trapezoid_tooth_profile
+# Shared part helpers live beside the single-body generators.
+PARTS_DIR = Path(__file__).resolve().parents[1] / "parts"
+if str(PARTS_DIR) not in sys.path:
+    sys.path.insert(0, str(PARTS_DIR))
+
+from part_common import polar_point, trapezoid_tooth_profile  # noqa: E402
 
 
 GEAR_THICKNESS = 8.0
@@ -147,7 +154,7 @@ def _planet_center(index: int) -> tuple[float, float]:
 
 
 def gen_step():
-    """Return the simplified planetary gear benchmark assembly in millimeters."""
+    """Return the simplified planetary gear assembly in millimeters."""
     parts = [
         _make_carrier_plate(),
         _make_internal_ring_gear(),
@@ -178,4 +185,4 @@ def gen_step():
         )
         parts.append(_make_pin(f"planet_pin_{index + 1}", center))
 
-    return Compound(obj=parts, children=parts, label="benchmark_10_simplified_planetary_gear_stage")
+    return Compound(obj=parts, children=parts, label="simplified_planetary_gear_stage")

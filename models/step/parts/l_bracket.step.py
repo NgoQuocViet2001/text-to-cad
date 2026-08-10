@@ -13,7 +13,7 @@ from build123d import (
     extrude,
 )
 
-from benchmark_common import safe_fillet
+from part_common import safe_fillet
 
 
 BASE_LENGTH = 80.0
@@ -72,7 +72,7 @@ def _transition_edges(part):
 
 
 def gen_step():
-    """Return the L-bracket benchmark model in millimeters."""
+    """Return the L-bracket model in millimeters."""
     with BuildPart() as bracket:
         Box(BASE_LENGTH, BASE_WIDTH, BASE_THICKNESS, align=(Align.CENTER, Align.CENTER, Align.MIN))
 
@@ -109,5 +109,5 @@ def gen_step():
 
     part = bracket.part
     part = safe_fillet(part, _transition_edges(part), radius=TRANSITION_FILLET)
-    part.label = "benchmark_03_l_bracket_gussets_two_hole_directions"
+    part.label = "l_bracket_gussets_two_hole_directions"
     return part

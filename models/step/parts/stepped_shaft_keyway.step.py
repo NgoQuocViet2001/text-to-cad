@@ -1,6 +1,6 @@
 from build123d import Align, Box, BuildPart, Cylinder, Location, Locations, Mode
 
-from benchmark_common import circular_edges, safe_chamfer
+from part_common import circular_edges, safe_chamfer
 
 
 TOTAL_LENGTH = 120.0
@@ -29,7 +29,7 @@ def _add_shaft_section(x_start: float, x_end: float, diameter: float):
 
 
 def gen_step():
-    """Return the stepped shaft with keyway benchmark model in millimeters."""
+    """Return the stepped shaft with keyway model in millimeters."""
     with BuildPart() as shaft:
         _add_shaft_section(0.0, LEFT_LENGTH, SMALL_DIAMETER)
         _add_shaft_section(LEFT_LENGTH, LEFT_LENGTH + MIDDLE_LENGTH, MIDDLE_DIAMETER)
@@ -49,5 +49,5 @@ def gen_step():
     end_edges.extend(circular_edges(part, radius=SMALL_DIAMETER / 2.0, axis="x", coordinate=0.0))
     end_edges.extend(circular_edges(part, radius=SMALL_DIAMETER / 2.0, axis="x", coordinate=TOTAL_LENGTH))
     part = safe_chamfer(part, end_edges, length=END_CHAMFER)
-    part.label = "benchmark_04_stepped_shaft_keyway"
+    part.label = "stepped_shaft_keyway"
     return part

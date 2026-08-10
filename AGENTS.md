@@ -223,7 +223,7 @@ wrapper unless you are debugging a lower-level script.
 
 ## Git And LFS
 
-CAD exchange files, generated render/topology assets, `assets/**`, and
-`benchmarks/**` may be LFS-tracked. Never disable LFS filters for `git add`,
-commits, or other object-writing operations. Local hooks live in `.githooks` and
+CAD exchange files, generated render/topology assets, and `assets/**` may be
+LFS-tracked. Never disable LFS filters for `git add`, commits, or other
+object-writing operations. Local hooks live in `.githooks` and
 delegate build checks through `scripts/git-hooks/pre-commit`.

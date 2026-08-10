@@ -141,9 +141,9 @@ def _make_baluster(index: int):
 
 
 def gen_step():
-    """Return the miniature spiral staircase benchmark model in millimeters."""
+    """Return the miniature spiral staircase model in millimeters."""
     parts = [_make_base(), _make_column()]
     parts.extend(_make_tread(index) for index in range(TREAD_COUNT))
     parts.append(_make_handrail())
     parts.extend(_make_baluster(index) for index in range(TREAD_COUNT))
-    return Compound(obj=parts, children=parts, label="benchmark_09_spiral_staircase_helical_handrail")
+    return Compound(obj=parts, children=parts, label="spiral_staircase_helical_handrail")
