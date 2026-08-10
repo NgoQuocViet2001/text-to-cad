@@ -361,8 +361,11 @@ class LocalAssetBackend:
         if code in artifact_mod.BUILDABLE_ARTIFACT_CODES:
             status = {"state": artifact_mod.ARTIFACT_STATE_NEEDS_BUILD, "reason": code, "ref": ref}
             if snap.busy:
-                # Stale AND the generator is occupied: a build would just block on the
-                # peer. Tell the client to wait rather than POST.
+                # Stale AND the generator is occupied (an export is running this model's
+                # gen_step). A build would NOT block on it -- the two take different
+                # sentinels precisely so they do not exclude each other -- it would run the
+                # same generator a second time, concurrently, for nothing. Telling the
+                # client to wait is an efficiency call, not a deadlock avoidance one.
                 status["blocked"] = True
             return status
         return {"state": artifact_mod.ARTIFACT_STATE_ERROR, "reason": code, "error": code, "ref": ref}
@@ -471,6 +474,11 @@ class LocalAssetBackend:
         #
         # Reporting `generating` immediately lets the client attach to the peer's run and
         # watch its live progress instead, which is both faster and truthful.
+        #
+        # This check is the FAST PATH, not the guarantee: it is a snapshot, so a peer can
+        # take the lock immediately after it, and force= skips it entirely. The guarantee is
+        # the bounded --lock-timeout in _run_artifact_build, whose contended result lands on
+        # the same answer below.
         snap = artifact_mod.generation_snapshot(scanner.render_package_dir(artifact_source))
         if not force and snap.writing:
             result = {"ok": True, "state": artifact_mod.ARTIFACT_STATE_GENERATING, "ref": ref}

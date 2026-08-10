@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import io
 import importlib.util
 import json
 import math
@@ -129,50 +128,6 @@ class _CliTargetSpec:
     output_path: Path | None = None
 
 
-class InlineStatusBoard:
-    def __init__(self, labels: Sequence[str], *, initial_status: str, stream: object | None = None) -> None:
-        self._stream = stream or sys.stdout
-        self._is_tty = getattr(self._stream, "isatty", lambda: False)()
-        self._labels = list(labels)
-        self._statuses = {label: initial_status for label in self._labels}
-        self._rendered_rows = 0
-        if self._labels and self._is_tty:
-            self._render()
-        else:
-            for label in self._labels:
-                print(self._row(label), file=self._stream)
-
-    def set(self, label: str, status: str) -> None:
-        previous = self._statuses.get(label)
-        if previous == status:
-            return
-        if label not in self._statuses:
-            self._labels.append(label)
-        self._statuses[label] = status
-        if self._is_tty:
-            self._render()
-        else:
-            print(self._row(label), file=self._stream)
-
-    def _row(self, label: str) -> str:
-        width = max(len(item) for item in self._labels)
-        return f"{label:<{width}} : {self._statuses.get(label, '')}"
-
-    def _render(self) -> None:
-        if not self._labels:
-            return
-        rows = [self._row(label) for label in self._labels]
-        if self._rendered_rows:
-            print(f"\x1b[{self._rendered_rows}F", end="", file=self._stream)
-        for row in rows:
-            print(f"\x1b[2K{row}", file=self._stream)
-        if self._rendered_rows > len(rows):
-            for _ in range(self._rendered_rows - len(rows)):
-                print("\x1b[2K", file=self._stream)
-        self._rendered_rows = len(rows)
-        self._stream.flush()
-
-
 class InlineProgressLine:
     """A single self-erasing progress line for one model's build.
 
@@ -181,8 +136,9 @@ class InlineProgressLine:
     a log record. Disabled (and completely silent) when the stream is not a tty: a
     redirected log wants the logger's lines, not a bar smeared over hundreds of writes.
 
-    Separate from :class:`InlineStatusBoard`, which paints a persistent row per model
-    for callers that run without a logger."""
+    Goes to STDERR, with the rest of the narration. A sibling class used to paint a
+    persistent per-model board on STDOUT with cursor-movement escapes, for callers that ran
+    without a logger; there were none, and stdout is the CLIs' result channel."""
 
     def __init__(self, *, stream: TextIO | None = None, enabled: bool = True) -> None:
         self._stream = stream if stream is not None else sys.stderr
@@ -1894,63 +1850,33 @@ def _progress_status_text(event: ProgressEvent, *, fallback: str) -> str:
 def _run_selected_specs(
     selected_specs: Sequence[EntrySpec],
     *,
-    initial_status: str = "Queued",
     action_status: str = "Generating...",
     done_status: str = "Generated",
     action: Callable[..., object],
-    quiet: bool = False,
-    status_stream: object | None = None,
-    action_stdout: object | None = None,
-    logger: CliLogger | None = None,
+    logger: CliLogger,
     success_message: Callable[[EntrySpec], str] | None = _generated_output_summary,
 ) -> list[object]:
-    results: list[object] = []
-    # Only the status-board branch renders progress. A quiet run has nowhere to put it,
-    # and a verbose run is already narrating each stage through the logger — a bar
-    # repainting between log lines would fight with them. Both still write the sidecar,
-    # so an open CAD Viewer sees the build either way.
-    if quiet:
-        for spec in selected_specs:
-            with contextlib.redirect_stdout(io.StringIO()):
-                results.append(action(spec, None))
-        return results
-    if logger is not None:
-        for spec in selected_specs:
-            logger.debug(f"{action_status} {spec.source_ref}")
-            with _cli_progress_line(spec, logger=logger, fallback=action_status) as progress_sink:
-                with logger.timed(f"{done_status.lower()} {spec.source_ref}"):
-                    if action_stdout is None:
-                        result = action(spec, progress_sink)
-                    else:
-                        with contextlib.redirect_stdout(action_stdout):
-                            result = action(spec, progress_sink)
-            results.append(result)
-            if isinstance(result, _SkippedGeneration):
-                logger.info(f"{spec.cad_ref} was built by a concurrent run; skipped")
-            elif success_message is not None:
-                message_spec = result.spec if isinstance(result, GeneratedStepResult) else spec
-                logger.info(success_message(message_spec))
-        return results
-    status_board = InlineStatusBoard(
-        [spec.source_ref for spec in selected_specs],
-        initial_status=initial_status,
-        stream=status_stream,
-    )
-    for spec in selected_specs:
-        status_board.set(spec.source_ref, action_status)
-        # Repaint this spec's row from its build's own progress events. The board
-        # already redraws in place on a tty and degrades to one line per change
-        # otherwise, so a bar costs it nothing new.
-        def progress_sink(event: ProgressEvent, ref: str = spec.source_ref) -> None:
-            status_board.set(ref, _progress_status_text(event, fallback=action_status))
+    """Run ``action`` for each spec, narrating to ``logger`` and painting one progress line.
 
-        if action_stdout is None:
-            result = action(spec, progress_sink)
-        else:
-            with contextlib.redirect_stdout(action_stdout):
+    A generator's own prints go straight through to stdout: the CLIs reserve stdout for the
+    result (``--json``) and put every log line on stderr, so there is nothing to protect it
+    from. Progress is a transient tty line that erases itself — see
+    :func:`_cli_progress_line`, which stays silent under ``--verbose`` where the logger is
+    already narrating every stage. The sidecar is written either way, so an open CAD Viewer
+    tracks the build regardless of what this prints.
+    """
+    results: list[object] = []
+    for spec in selected_specs:
+        logger.debug(f"{action_status} {spec.source_ref}")
+        with _cli_progress_line(spec, logger=logger, fallback=action_status) as progress_sink:
+            with logger.timed(f"{done_status.lower()} {spec.source_ref}"):
                 result = action(spec, progress_sink)
         results.append(result)
-        status_board.set(spec.source_ref, done_status)
+        if isinstance(result, _SkippedGeneration):
+            logger.info(f"{spec.cad_ref} was built by a concurrent run; skipped")
+        elif success_message is not None:
+            message_spec = result.spec if isinstance(result, GeneratedStepResult) else spec
+            logger.info(success_message(message_spec))
     return results
 
 
