@@ -5,6 +5,12 @@ import json
 from pathlib import Path
 
 from cadgen.cli_logging import CliLogger
+from cadgen._internal.cli_locking import (
+    add_lock_timeout_argument,
+    contended_payload,
+    deadline_ms,
+    lock_wait_notice,
+)
 from cadgen.coordination import DRAWING_PACKAGE, PHASE_FINALIZE, artifact_build
 from cadgen._internal.drawing_package import (
     drawing_package_current,
@@ -72,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--export", help="Also write the (fresh) drawing DXF to this path.")
     parser.add_argument("--force", action="store_true", help="Regenerate even if a current artifact exists.")
     parser.add_argument("--verbose", action="store_true", help="Show detailed timing on stderr.")
+    add_lock_timeout_argument(parser)
     return parser
 
 
@@ -94,6 +101,7 @@ def build_dxf_artifact(
     force: bool = False,
     reset_runtime_closure: bool = False,
     logger: CliLogger | None = None,
+    lock_timeout_s: float = 0.0,
 ) -> dict[str, object]:
     """Build the drawing-package artifact for one DXF entry and RETURN the result payload
     (the exact dict the CLI prints). Mirrors :func:`cadgen.step_artifact.build_step_artifact`
@@ -126,7 +134,14 @@ def build_dxf_artifact(
         package_dir,
         is_current=lambda: drawing_package_current(resolved_source),
         force=force,
+        deadline_ms=deadline_ms(lock_timeout_s),
+        on_wait=lock_wait_notice(logger, relative_to_cwd(resolved_source)),
     ) as run:
+        if run.contended:
+            logger.info(f"another run is building {relative_to_cwd(resolved_source)}; not waiting")
+            return contended_payload(
+                source_ref=relative_to_cwd(resolved_source), package_dir=package_dir
+            )
         skipped = run.skipped
         if not skipped:
             if imported:
@@ -175,6 +190,7 @@ def run_cli_payload(
         force=bool(args.force),
         reset_runtime_closure=reset_runtime_closure,
         logger=logger,
+        lock_timeout_s=float(args.lock_timeout or 0.0),
     )
     logger.total()
     return payload
