@@ -1,3 +1,4 @@
+import importlib.util
 import subprocess
 import sys
 import unittest
@@ -13,7 +14,17 @@ add_repo_path("packages/cadgen/src")
 # drawings and where its runtime lives. What is DXF-specific -- resolving a .dxf or a
 # gen_dxf() source to its built package -- is what these tests cover.
 import cadgen.snapshot_cli as snapshot
-import snapshot.__main__ as dxf_snapshot_entry
+
+# Loaded BY PATH, not by module name: every skill names its entry package `snapshot`, so
+# `import snapshot.__main__` resolves to whichever skill's scripts dir landed on sys.path
+# first. With the CAD snapshot tests in the same process that is CAD's, and this test then
+# silently asserts against the wrong skill's kinds.
+_dxf_entry_spec = importlib.util.spec_from_file_location(
+    "dxf_skill_snapshot_entry",
+    Path(repo_path("skills/dxf/scripts/snapshot/__main__.py")),
+)
+dxf_snapshot_entry = importlib.util.module_from_spec(_dxf_entry_spec)
+_dxf_entry_spec.loader.exec_module(dxf_snapshot_entry)
 
 
 class DxfSnapshotCliTests(unittest.TestCase):

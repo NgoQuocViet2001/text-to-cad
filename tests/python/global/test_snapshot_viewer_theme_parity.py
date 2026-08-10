@@ -25,6 +25,7 @@ add_repo_path("packages/cadgen/src")
 from cadgen.snapshot_core import (  # noqa: E402
     DEFAULT_RENDER_THEME_ID,
     DISPLAY_OPTION_KEYS,
+    VIEWER_DEFAULT_THEME_ID,
     WORKBENCH_RENDER_THEME_IDS,
 )
 
@@ -78,17 +79,27 @@ class DisplayParityTests(unittest.TestCase):
 
 
 class ThemeParityTests(unittest.TestCase):
-    def test_the_snapshot_default_is_the_viewers_default_preset(self):
-        self.assertEqual(
-            _viewer_default_preset_id(),
-            DEFAULT_RENDER_THEME_ID,
-            "a snapshot with no --theme must render the theme the viewer opens with",
-        )
+    def test_the_snapshot_default_is_the_render_only_snapshot_theme(self):
+        self.assertEqual("snapshot", DEFAULT_RENDER_THEME_ID)
 
-    def test_the_snapshot_default_is_a_real_preset(self):
-        # The bare "workbench" survives only as a browser-side alias; the CLI must name an
-        # id the viewer's own table actually contains.
-        self.assertIn(DEFAULT_RENDER_THEME_ID, _preset_ids())
+    def test_the_snapshot_theme_is_not_offered_in_the_viewer(self):
+        # It exists for headless renders. Putting a theme with no grid and no origin axis
+        # in the picker would hand it to someone who wants both.
+        self.assertNotIn(DEFAULT_RENDER_THEME_ID, _preset_ids())
+
+    def test_the_snapshot_theme_id_the_cli_names_is_the_one_js_declares(self):
+        # Behaviour (what the theme actually renders) is asserted in cadjs's own suite;
+        # what this side can check is that the two agree on the id at all.
+        match = re.search(r'export const SNAPSHOT_THEME_ID\s*=\s*"([^"]+)"', _js_source())
+        self.assertIsNotNone(match, "themeSettings.js no longer declares SNAPSHOT_THEME_ID")
+        self.assertEqual(match.group(1), DEFAULT_RENDER_THEME_ID)
+        self.assertIn("RENDER_ONLY_THEME_PRESETS", _js_source())
+
+    def test_the_theme_it_derives_from_is_the_viewers_default(self):
+        # `snapshot` is Workbench Light minus its furniture. If the viewer changes which
+        # preset it opens with, the derivation is the thing to revisit.
+        self.assertEqual(_viewer_default_preset_id(), VIEWER_DEFAULT_THEME_ID)
+        self.assertIn(VIEWER_DEFAULT_THEME_ID, _preset_ids())
 
     def test_every_workbench_preset_counts_as_the_workbench_theme(self):
         # This set decides default render dimensions. A workbench preset missing from it
@@ -106,7 +117,7 @@ class ThemeParityTests(unittest.TestCase):
     def test_it_claims_no_id_the_viewer_does_not_have(self):
         # The legacy "workbench" alias is allowed; anything else would be a typo that
         # silently changes a render's size.
-        unknown = WORKBENCH_RENDER_THEME_IDS - _preset_ids() - {"workbench"}
+        unknown = WORKBENCH_RENDER_THEME_IDS - _preset_ids() - {"workbench", "snapshot"}
         self.assertEqual(set(), unknown, f"unknown theme id(s): {sorted(unknown)}")
 
 

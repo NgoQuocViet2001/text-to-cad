@@ -36,10 +36,16 @@ from urllib.parse import quote, unquote, urlparse
 SNAPSHOT_ORIGIN = "http://snapshot.local"
 SNAPSHOT_RENDER_URL = f"{SNAPSHOT_ORIGIN}/render.html"
 SNAPSHOT_ROUTE_GLOB = f"{SNAPSHOT_ORIGIN}/**"
-# The viewer's own default preset id (themeSettings.js DEFAULT_THEME_PRESET_ID). It used
-# to be the bare "workbench", which the browser still resolves -- to light, by an explicit
-# back-compat alias -- so the picture was right and only this side's BOOKKEEPING was wrong.
-DEFAULT_RENDER_THEME_ID = "workbench-light"
+# A snapshot is usually READ by an agent rather than looked at by a person, so it does not
+# default to a viewer theme at all: `snapshot` is Workbench Light with the ground grid and
+# origin axis removed (themeSettings.js RENDER_ONLY_THEME_PRESETS). Those two are helpful
+# orientation in a live viewport and are geometry-shaped contrast in a still image --
+# straight low-contrast lines crossing the model, indistinguishable from a silhouette edge.
+# Materials, lighting and background are Workbench Light unchanged, so parts read exactly as
+# they do in the viewer.
+DEFAULT_RENDER_THEME_ID = "snapshot"
+# The viewer theme `snapshot` is derived from, and the id its default dimensions follow.
+VIEWER_DEFAULT_THEME_ID = "workbench-light"
 DEFAULT_TIMEOUT_SECONDS = 300
 RENDER_BROWSER_STARTUP_TIMEOUT_MS = 15_000
 # `animate` is implicit-only: it sweeps a model's own declared animation. The STEP
@@ -54,7 +60,7 @@ TOPOLOGY_DISPLAY_MODES = {"hidden_edges", "hidden_lines_removed"}
 # non-workbench branch and silently rendered at 1200x900 instead of 1600x1200, despite
 # resolving to the identical theme in the browser. Pinned against the viewer's preset table
 # by tests/python/global/test_snapshot_viewer_theme_parity.py.
-WORKBENCH_RENDER_THEME_IDS = {"workbench", "workbench-light", "workbench-dark"}
+WORKBENCH_RENDER_THEME_IDS = {"snapshot", "workbench", "workbench-light", "workbench-dark"}
 SUPPORTED_JOB_KEYS = frozenset(
     {
         "input",

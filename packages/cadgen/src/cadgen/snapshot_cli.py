@@ -1381,13 +1381,6 @@ KIND_RESOLVERS: dict[str, Callable[..., dict[str, object]]] = {
 # than a skill having to remember to name both.
 KIND_ENABLES: dict[str, tuple[str, ...]] = {"step": ("step", "python")}
 
-# Which skill owns each kind, so a rejection can point somewhere instead of just saying no.
-KIND_OWNER: dict[str, str] = {
-    "step": "cad", "stp": "cad", "python": "cad", "glb": "cad", "stl": "cad", "3mf": "cad",
-    "implicit": "implicit-cad",
-    "dxf": "dxf",
-    "urdf": "urdf", "srdf": "srdf", "sdf": "sdf",
-}
 
 # What each kind is called in help and in errors, in the order a reader wants them.
 KIND_LABELS: dict[str, str] = {
@@ -1413,24 +1406,24 @@ def enabled_kinds(kinds: Sequence[str]) -> frozenset[str]:
 
 
 def reject_unsupported_kind(kind: str, input_path: Path, enabled: frozenset[str]) -> None:
-    """Refuse an input this skill does not render, naming the skill that does.
+    """Refuse an input this skill does not render.
 
     A shared implementation makes every skill CAPABLE of every format, so the gate is the
-    only thing keeping `cad` from quietly rendering a robot. It has to fail loudly and
-    point somewhere, or narrowing the skills just moves the confusion.
+    only thing keeping `cad` from quietly rendering a robot. It states what this skill
+    takes and stops there: naming another skill would assume that skill is installed, and
+    skills ship independently.
     """
     if kind in enabled:
         return
     label = KIND_LABELS.get(kind, f".{kind}") if kind else input_path.suffix or "that file"
-    owner = KIND_OWNER.get(kind)
     accepted = ", ".join(
-        KIND_LABELS[name] for name in ("step", "stp", "3mf", "glb", "stl", "implicit", "dxf", "urdf", "srdf", "sdf")
+        KIND_LABELS[name]
+        for name in _KIND_HELP_ORDER
         if name in enabled and name in KIND_LABELS
     )
-    detail = f" Use the {owner} skill's snapshot for it." if owner else ""
     raise SnapshotError(
-        f"this skill's snapshot does not render {label} inputs: {input_path}.{detail}"
-        f" It accepts: {accepted or '(nothing)'}."
+        f"snapshot does not render {label} inputs: {input_path}. "
+        f"It accepts: {accepted or '(nothing)'}."
     )
 
 

@@ -715,7 +715,7 @@ class SnapshotCliTests(unittest.TestCase):
                 snapshot_main.ensure_step_topology_artifact = fake_ensure
                 with self.assertRaisesRegex(
                     SnapshotError,
-                    r"does not render \.dxf.*inputs.*Use the dxf skill's snapshot",
+                    r"does not render \.dxf.*inputs",
                 ):
                     resolve_render_job_packet(
                         {

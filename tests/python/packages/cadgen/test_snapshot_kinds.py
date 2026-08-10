@@ -18,7 +18,6 @@ from tests.python.support.paths import add_repo_path
 add_repo_path("packages/cadgen/src")
 
 from cadgen.snapshot_cli import (  # noqa: E402
-    KIND_OWNER,
     KIND_RESOLVERS,
     SnapshotError,
     enabled_kinds,
@@ -86,18 +85,25 @@ class KindGateTests(unittest.TestCase):
 
     def test_each_skill_refuses_the_others_formats(self):
         cases = [
-            ("cad", "orb.implicit.js", "implicit-cad"),
-            ("cad", "arm.urdf", "urdf"),
-            ("cad", "panel.dxf", "dxf"),
-            ("implicit-cad", "part.step", "cad"),
-            ("dxf", "part.step", "cad"),
-            ("urdf", "orb.implicit.js", "implicit-cad"),
+            ("cad", "orb.implicit.js"),
+            ("cad", "arm.urdf"),
+            ("cad", "panel.dxf"),
+            ("implicit-cad", "part.step"),
+            ("dxf", "part.step"),
+            ("urdf", "orb.implicit.js"),
         ]
-        for skill, filename, owner in cases:
+        for skill, filename in cases:
             with self.subTest(skill=skill, filename=filename):
                 message = self._reject(skill, filename)
                 self.assertIn("does not render", message)
-                self.assertIn(f"Use the {owner} skill", message, message)
+
+    def test_a_refusal_never_points_at_another_skill(self):
+        # Skills install independently, so naming one assumes something we cannot know.
+        for skill, filename in (("cad", "arm.urdf"), ("dxf", "orb.implicit.js")):
+            with self.subTest(skill=skill):
+                message = self._reject(skill, filename)
+                for other in ("cad skill", "dxf skill", "implicit-cad skill", "urdf skill"):
+                    self.assertNotIn(other, message, message)
 
     def test_the_refusal_lists_what_this_skill_does_take(self):
         # A bare "no" makes the reader go read the source; the accepted set is the answer.
@@ -110,11 +116,6 @@ class KindGateTests(unittest.TestCase):
         # would report a path the caller never named.
         message = self._reject("implicit-cad", "bracket.step.py", body="def gen_step(): ...")
         self.assertIn("bracket.step.py", message)
-        self.assertIn("Use the cad skill", message)
-
-    def test_every_owned_kind_has_an_owner_to_point_at(self):
-        for kind in set(KIND_RESOLVERS) | {"dxf"}:
-            self.assertIn(kind, KIND_OWNER, f"{kind} has no owning skill to name")
 
 
 class GeneratedHelpTests(unittest.TestCase):
