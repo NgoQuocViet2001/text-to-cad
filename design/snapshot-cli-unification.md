@@ -4,12 +4,32 @@
 
 | Phase | Status |
 |---|---|
-| S0 `--appearance` → `--theme`, hard rename | |
-| S1 shared CLI shell + kind registry in cadgen | |
-| S2 CAD / DXF / implicit re-pointed at it | |
+| S0 `--appearance` → `--theme`, hard rename | **DONE** `1e8d59ed` |
+| S1 shared CLI shell + kind registry in cadgen | **DONE** `276002fc` |
+| S2 CAD / DXF / implicit re-pointed at it | **DONE** `5f008ddc` |
 | S3 urdf / srdf / sdf gain snapshot | |
-| S4 theme + display pinned to the viewer's | |
-| S5 bundles, tests, skill docs | |
+| S4 theme + display pinned to the viewer's | **DONE** `e0f6cfa3` |
+| S5 bundles, tests, skill docs | partial — implicit SKILL.md done |
+
+S4 ran before S3: it is what the drift in §1 was actually about, and it is small.
+
+### What the phases found that the plan did not predict
+
+- **The `"workbench"` theme id was not broken, it was mis-filed.** The browser resolves
+  it to light through an explicit back-compat alias, so the theme was always right. The
+  damage was that `WORKBENCH_RENDER_THEME_IDS` also decides DEFAULT DIMENSIONS, so
+  `--theme workbench` rendered 1600x1200 and `--theme workbench-light` rendered 1200x900
+  — same theme, different image, no warning. §1's claim that the id "cannot resolve" was
+  wrong; the fix is the same either way.
+- **`input_kind()` never recognised `.dxf` at all**, so a drawing handed to the CAD skill
+  could not be told where to go. It also read `<name>.dxf.py` as a STEP generator.
+- **Moving implicit off its own CLI would have silently dropped three features** —
+  `graphics`, `implicitParameters`/`implicitAnimation`, and `animate` mode. They moved
+  into the shared schema. Adding `animate` there meant STEP started accepting it, so STEP
+  now names its own mode set.
+- **`--graphics` is a third option, not part of `--display`.** The viewer has a third tab
+  for implicit graphics beside Theme and Display, so the CLI mirrors that rather than
+  folding raymarch quality into display settings.
 
 ## 1. Where this starts
 
