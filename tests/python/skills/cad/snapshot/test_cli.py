@@ -56,11 +56,15 @@ def write_package(step_path, *, entry_kind="part", source_kind="step"):
     return pkg_dir
 
 add_repo_path("skills/cad/scripts")
+add_repo_path("packages/cadgen/src")
 
-import snapshot.__main__ as snapshot_main
-from snapshot.__main__ import (
-    RENDER_HTML_PATH,
-    RUNTIME_DIR,
+# The CLI itself is shared (cadgen.snapshot_cli); the CAD skill's entrypoint is the
+# declaration of which kinds it accepts and where its runtime lives. These tests exercise
+# the CAD skill's behaviour, so they drive the shared implementation through that skill's
+# runtime directory.
+import cadgen.snapshot_cli as snapshot_main
+import snapshot.__main__ as cad_snapshot_entry
+from cadgen.snapshot_cli import (
     SnapshotError,
     load_job_from_options,
     parse_snapshot_args,
@@ -68,6 +72,10 @@ from snapshot.__main__ import (
     resolve_snapshot_route_file,
     timestamp_output_path,
 )
+
+RUNTIME_DIR = cad_snapshot_entry.RUNTIME_DIR
+RENDER_HTML_PATH = RUNTIME_DIR / "render.html"
+CAD_KINDS = snapshot_main.enabled_kinds(cad_snapshot_entry.KINDS)
 
 
 class _TtyStringIO(io.StringIO):
@@ -641,7 +649,7 @@ class SnapshotCliTests(unittest.TestCase):
 
         result = asyncio.run(
             snapshot_main.render_resolved_job_packet(
-                {"single": True, "jobs": [job]}, runtime_dir=snapshot_main.RUNTIME_DIR, renderer=StubRenderer()
+                {"single": True, "jobs": [job]}, runtime_dir=RUNTIME_DIR, renderer=StubRenderer()
             )
         )
         self.assertEqual(result["debug"], debug_payload)
@@ -651,7 +659,7 @@ class SnapshotCliTests(unittest.TestCase):
 
         multi = asyncio.run(
             snapshot_main.render_resolved_job_packet(
-                {"single": False, "jobs": [job]}, runtime_dir=snapshot_main.RUNTIME_DIR, renderer=StubRenderer()
+                {"single": False, "jobs": [job]}, runtime_dir=RUNTIME_DIR, renderer=StubRenderer()
             )
         )
         self.assertEqual(multi["jobs"][0]["debug"], debug_payload)
@@ -692,8 +700,9 @@ class SnapshotCliTests(unittest.TestCase):
             root = Path(temporary_directory).resolve()
             models = root / "models"
             models.mkdir()
-            # A DXF: still genuinely unsupported as a direct snapshot input. This used to
-            # be a .urdf, which the robot resolver now accepts.
+            # A drawing. The shared CLI can resolve one, but the CAD skill does not enable
+            # it -- so the rejection must name the skill that does, and must happen before
+            # anything is built.
             (models / "panel.dxf").write_text("0\nSECTION\n", encoding="utf-8")
             calls = []
 
@@ -706,9 +715,7 @@ class SnapshotCliTests(unittest.TestCase):
                 snapshot_main.ensure_step_topology_artifact = fake_ensure
                 with self.assertRaisesRegex(
                     SnapshotError,
-                    "Snapshot supports STEP/STP inputs, same-stem Python generators, "
-                    "direct GLB/STL/3MF meshes, .implicit.js models, or "
-                    r"\.urdf/\.srdf/\.sdf robot descriptions",
+                    r"does not render \.dxf.*inputs.*Use the dxf skill's snapshot",
                 ):
                     resolve_render_job_packet(
                         {
@@ -716,6 +723,7 @@ class SnapshotCliTests(unittest.TestCase):
                             "outputs": [{"path": "tmp/iso.png", "camera": "iso"}],
                         },
                         cwd=root,
+                        kinds=CAD_KINDS,
                     )
             finally:
                 snapshot_main.ensure_step_topology_artifact = original_ensure
@@ -1374,13 +1382,13 @@ class SnapshotCliTests(unittest.TestCase):
     def test_runtime_routes_are_self_contained(self) -> None:
         self.assertEqual(
             resolve_snapshot_route_file(
-                "http://snapshot.local/render.html", runtime_dir=snapshot_main.RUNTIME_DIR
+                "http://snapshot.local/render.html", runtime_dir=RUNTIME_DIR
             ),
             RENDER_HTML_PATH,
         )
         self.assertEqual(
             resolve_snapshot_route_file(
-                "http://snapshot.local/snapshot-render.js", runtime_dir=snapshot_main.RUNTIME_DIR
+                "http://snapshot.local/snapshot-render.js", runtime_dir=RUNTIME_DIR
             ),
             RUNTIME_DIR / "snapshot-render.js",
         )
@@ -1442,7 +1450,7 @@ class SnapshotCliTests(unittest.TestCase):
             sys.modules["playwright.async_api"] = async_api_module
 
             async def start_renderer() -> None:
-                renderer = snapshot_main.BatchSnapshotRenderer(snapshot_main.RUNTIME_DIR)
+                renderer = snapshot_main.BatchSnapshotRenderer(RUNTIME_DIR)
                 try:
                     await renderer.start()
                 finally:
