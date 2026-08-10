@@ -162,6 +162,35 @@ class InlineProgressLine:
 
 
 @contextlib.contextmanager
+def cli_progress_line(
+    label: str,
+    *,
+    logger: CliLogger,
+    fallback: str,
+) -> Iterator[Callable[[ProgressEvent], None] | None]:
+    """The same one-line build progress `gen` paints, for any caller with a label.
+
+    `scripts/artifact` builds exactly what `scripts/gen` builds and reported nothing while
+    doing it -- the sidecar record went to the viewer, and a terminal caller watched a
+    silent process. Sharing this is what stops the two disagreeing about whether a build is
+    worth narrating."""
+    if logger.verbose:
+        yield None
+        return
+    line = InlineProgressLine(stream=logger.stream)
+
+    def paint(event: ProgressEvent) -> None:
+        if event.finished:
+            return
+        line.update(f"{label}  {_progress_status_text(event, fallback=fallback)}")
+
+    try:
+        yield paint
+    finally:
+        line.clear()
+
+
+@contextlib.contextmanager
 def _cli_progress_line(
     spec: EntrySpec,
     *,

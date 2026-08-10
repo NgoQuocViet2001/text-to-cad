@@ -72,9 +72,17 @@ class ListPayloadShapeTests(unittest.TestCase):
 class CompactStdoutTests(unittest.TestCase):
     """No CLI pretty-prints JSON to stdout. Indentation was 38% of a 294 KB payload."""
 
+    # Every source that writes JSON to stdout. `cad artifact` and `dxf artifact` were
+    # missed by the first pass of this test and were still pretty-printing.
     STDOUT_JSON_SOURCES = (
         "packages/cadgen/src/cadgen/snapshot_core.py",
+        "packages/cadgen/src/cadgen/step_artifact.py",
+        "packages/cadgen/src/cadgen/dxf_artifact.py",
         "skills/cad/scripts/inspect/inspect_refs/cli.py",
+        "skills/cad/scripts/artifact/cli.py",
+        "skills/dxf/scripts/artifact/cli.py",
+        "skills/cad/scripts/gen/cli.py",
+        "skills/cad/scripts/export/cli.py",
     )
 
     def test_no_indented_json_reaches_stdout(self):

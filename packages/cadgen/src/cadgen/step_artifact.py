@@ -14,6 +14,7 @@ from cadgen._internal.cli_locking import (
 )
 from cadgen._internal.generation import (
     EntrySpec,
+    cli_progress_line,
     _assembly_glb_package_current,
     _existing_topology_artifact_matches_spec_without_scene,
     _entry_spec_from_source,
@@ -385,13 +386,18 @@ def build_step_artifact(
     # finished. Measured before this: two processes 0.3s apart on a cold package both ran
     # gen_step(), the second for a further 2.5s after waiting 2.67s for the lock.
     package_dir = render_package_dir(existing_spec.entry_path) if existing_spec.entry_path else None
-    with artifact_build(
+    # This builds exactly what `scripts/gen` builds, and reported nothing while doing it:
+    # the sidecar went to the viewer and a terminal caller watched a silent process.
+    with cli_progress_line(
+        existing_spec.source_ref, logger=logger, fallback="Building..."
+    ) as progress_sink, artifact_build(
         STEP_PACKAGE,
         package_dir,
         is_current=lambda: _current_artifact_for_spec(existing_spec) is not None,
         force=force,
         deadline_ms=deadline_ms(lock_timeout_s),
         on_wait=lock_wait_notice(logger, existing_spec.source_ref),
+        sink=progress_sink,
     ) as progress:
         if progress.contended:
             # A peer holds this model's lock and the caller asked not to wait it out. Not

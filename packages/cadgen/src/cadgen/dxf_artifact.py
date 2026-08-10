@@ -19,6 +19,7 @@ from cadgen._internal.drawing_package import (
     write_imported_drawing_package,
 )
 from cadgen._internal.generation import (
+    cli_progress_line,
     _entry_spec_from_source,
     run_script_generator,
 )
@@ -129,13 +130,16 @@ def build_dxf_artifact(
     # rewrite the package between the generator finishing and the descriptor being read.
     # This also gives a drawing build a progress record for the first time: no DXF code
     # path wrote one at all, so the viewer could never show a bar for a drawing.
-    with artifact_build(
+    with cli_progress_line(
+        relative_to_cwd(resolved_source), logger=logger, fallback="Building..."
+    ) as progress_sink, artifact_build(
         DRAWING_PACKAGE,
         package_dir,
         is_current=lambda: drawing_package_current(resolved_source),
         force=force,
         deadline_ms=deadline_ms(lock_timeout_s),
         on_wait=lock_wait_notice(logger, relative_to_cwd(resolved_source)),
+        sink=progress_sink,
     ) as run:
         if run.contended:
             logger.info(f"another run is building {relative_to_cwd(resolved_source)}; not waiting")
