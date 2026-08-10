@@ -2131,8 +2131,6 @@ def generate_step_targets(
     reported: list[dict[str, object]] = []
 
     def _emit(spec: EntrySpec, outcome: str) -> None:
-        if not json_output:
-            return
         reported.append(
             {
                 "ok": True,
@@ -2145,8 +2143,16 @@ def generate_step_targets(
         )
 
     def _flush() -> None:
+        # STDOUT IS THE RESULT, on every CLI. `gen` used to print nothing there at all --
+        # its only output was the logger's prose on stderr -- so a caller reading the two
+        # streams apart got an exit code and nothing else, while export, snapshot, validate
+        # and inspect all answered on stdout. One line per target, `outcome path`, upgraded
+        # to JSON by --json.
         for entry in reported:
-            print(json.dumps(entry, separators=(",", ":")))
+            if json_output:
+                print(json.dumps(entry, separators=(",", ":")))
+            else:
+                print(f"{entry['outcome']} {entry['packagePath']}")
     all_specs, selected_specs, target_output_paths = _selected_specs_for_targets(
         targets,
         step_options=step_options,
