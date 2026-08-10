@@ -359,7 +359,7 @@ Not a copy-paste like `camera.js`. `cadjs/common/themeSettings.js` (~1690
 lines) extracted CAD edge constants into `cadjs/common/displaySettings.js`;
 `implicitjs/common/themeSettings.js` (~1717 lines) still inlines them.
 **Scope rule (consumption-based):** a primitive moves into implicitjs only if
-implicitjs's own runtime imports it. The theme-preset/appearance/environment
+implicitjs's own runtime imports it. The theme-preset/theme/environment
 core qualifies (implicitjs's renderer deep-imports
 themeSettings/renderOptions/stageTheme/surfaceMaterials). The mesh/STEP-only
 superstructure does **not**: display modes, exploded-view machinery, and the

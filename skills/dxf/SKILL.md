@@ -125,7 +125,7 @@ python scripts/snapshot --input path/to/source.dxf.py --output turntable.gif --m
 It builds/refreshes the drawing package first, then renders that package's `preview.glb`
 through the same headless browser runtime the CAD skill's STEP snapshot uses — so a
 snapshot matches what the CAD Viewer shows. Flags: `--mode view|orbit`, `--camera`,
-`--appearance`, `--size-profile`, `--width`/`--height`, `--force`, `--json`. There are no
+`--theme`, `--size-profile`, `--width`/`--height`, `--force`, `--json`. There are no
 selector, parameter, section or exploded options: a drawing carries no CAD topology.
 
 No CLI inspects an existing `.dxf`. For entity/layer checks use `ezdxf` directly,

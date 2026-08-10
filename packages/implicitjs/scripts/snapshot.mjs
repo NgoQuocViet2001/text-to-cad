@@ -35,7 +35,7 @@ const ORBIT_RENDER_HEIGHT = 640;
 const CONTACT_SHEET_RENDER_WIDTH = 2400;
 const CONTACT_SHEET_RENDER_HEIGHT = 1600;
 
-const APPEARANCE_OPTION_KEYS = new Set([
+const THEME_OPTION_KEYS = new Set([
   "materials",
   "edges",
   "background",
@@ -75,7 +75,7 @@ export function helpText() {
   node scripts/snapshot.mjs --job <render-job.json>
   node scripts/snapshot.mjs --job - --json
 
-Snapshot renders browser-native implicit CAD .implicit.js/.implicit.mjs modules. Supported shortcut flags are --input, --output/-o, --mode, --appearance, --camera, --size-profile, --width, --height, --params, --graphics, --job, and --json. The default appearance is the built-in light/dark-aware theme. --appearance accepts a saved theme name, an inline JSON appearance settings object, or a JSON appearance settings file path. --camera accepts a preset, azimuth:elevation pair, or JSON object with preset, position, target, up, direction, and zoom fields. JSON jobs use input, mode=view/orbit/animate, outputs, camera, width/height, appearance, graphics, implicitParameters, implicitAnimation, orbit, and optional render.transparent/render.zoom/render.frameMargin. A job can include multiple outputs, and --job can load a raw job, an array of jobs, or { "jobs": [...] }; prefer one multi-output job for review packets so the browser, source module, and runtime model are reused. Output file names are saved with a shared UTC seconds timestamp before the extension.
+Snapshot renders browser-native implicit CAD .implicit.js/.implicit.mjs modules. Supported shortcut flags are --input, --output/-o, --mode, --theme, --camera, --size-profile, --width, --height, --params, --graphics, --job, and --json. The default theme is the built-in light/dark-aware theme. --theme accepts a saved theme name, an inline JSON theme settings object, or a JSON theme settings file path. --camera accepts a preset, azimuth:elevation pair, or JSON object with preset, position, target, up, direction, and zoom fields. JSON jobs use input, mode=view/orbit/animate, outputs, camera, width/height, theme, graphics, implicitParameters, implicitAnimation, orbit, and optional render.transparent/render.zoom/render.frameMargin. A job can include multiple outputs, and --job can load a raw job, an array of jobs, or { "jobs": [...] }; prefer one multi-output job for review packets so the browser, source module, and runtime model are reused. Output file names are saved with a shared UTC seconds timestamp before the extension.
 `;
 }
 
@@ -106,8 +106,8 @@ function optionDefaults() {
     output: "",
     mode: "",
     modeSpecified: false,
-    appearance: DEFAULT_RENDER_THEME_ID,
-    appearanceSpecified: false,
+    theme: DEFAULT_RENDER_THEME_ID,
+    themeSpecified: false,
     camera: "iso",
     cameraSpecified: false,
     sizeProfile: "",
@@ -152,13 +152,13 @@ export function parseSnapshotArgs(argv) {
     } else if (arg.startsWith("--mode=")) {
       options.mode = arg.slice("--mode=".length);
       options.modeSpecified = true;
-    } else if (arg === "--appearance") {
-      options.appearance = readRequiredValue(argv, index, arg);
-      options.appearanceSpecified = true;
+    } else if (arg === "--theme") {
+      options.theme = readRequiredValue(argv, index, arg);
+      options.themeSpecified = true;
       index += 1;
-    } else if (arg.startsWith("--appearance=")) {
-      options.appearance = arg.slice("--appearance=".length);
-      options.appearanceSpecified = true;
+    } else if (arg.startsWith("--theme=")) {
+      options.theme = arg.slice("--theme=".length);
+      options.themeSpecified = true;
     } else if (arg === "--camera") {
       options.camera = readRequiredValue(argv, index, arg);
       options.cameraSpecified = true;
@@ -258,30 +258,30 @@ function resolveMaybeRelative(rawPath, cwd) {
   return path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.resolve(cwd, rawPath);
 }
 
-function loadAppearanceOption(rawAppearance, { cwd }) {
-  const appearance = String(rawAppearance || DEFAULT_RENDER_THEME_ID).trim() || DEFAULT_RENDER_THEME_ID;
-  if (appearance.startsWith("{")) {
-    return validateDirectSettingsPayload(loadJsonText(appearance, "--appearance"), {
-      optionName: "--appearance",
-      sourceLabel: "--appearance",
-      allowedKeys: APPEARANCE_OPTION_KEYS,
-      settingLabel: "appearance settings",
+function loadThemeOption(rawTheme, { cwd }) {
+  const theme = String(rawTheme || DEFAULT_RENDER_THEME_ID).trim() || DEFAULT_RENDER_THEME_ID;
+  if (theme.startsWith("{")) {
+    return validateDirectSettingsPayload(loadJsonText(theme, "--theme"), {
+      optionName: "--theme",
+      sourceLabel: "--theme",
+      allowedKeys: THEME_OPTION_KEYS,
+      settingLabel: "theme settings",
     });
   }
 
-  const appearancePath = resolveMaybeRelative(appearance, cwd);
-  const looksLikeFile = appearance.toLowerCase().endsWith(".json") || appearance.includes("/") || appearance.includes("\\");
-  if (!looksLikeFile && !fs.existsSync(appearancePath)) {
-    return appearance;
+  const themePath = resolveMaybeRelative(theme, cwd);
+  const looksLikeFile = theme.toLowerCase().endsWith(".json") || theme.includes("/") || theme.includes("\\");
+  if (!looksLikeFile && !fs.existsSync(themePath)) {
+    return theme;
   }
-  if (!fs.existsSync(appearancePath)) {
-    throw new SnapshotError(`Appearance JSON file does not exist: ${appearance}`);
+  if (!fs.existsSync(themePath)) {
+    throw new SnapshotError(`Theme JSON file does not exist: ${theme}`);
   }
-  return validateDirectSettingsPayload(loadJsonText(fs.readFileSync(appearancePath, "utf8"), appearancePath), {
-    optionName: "--appearance",
-    sourceLabel: appearancePath,
-    allowedKeys: APPEARANCE_OPTION_KEYS,
-    settingLabel: "appearance settings",
+  return validateDirectSettingsPayload(loadJsonText(fs.readFileSync(themePath, "utf8"), themePath), {
+    optionName: "--theme",
+    sourceLabel: themePath,
+    allowedKeys: THEME_OPTION_KEYS,
+    settingLabel: "theme settings",
   });
 }
 
@@ -320,7 +320,7 @@ function applyOptionOverridesToJob(job, options, { cwd }) {
     return job;
   }
   if (!options.modeSpecified &&
-      !options.appearanceSpecified &&
+      !options.themeSpecified &&
       !options.cameraSpecified &&
       !options.sizeProfile &&
       !options.width &&
@@ -333,8 +333,8 @@ function applyOptionOverridesToJob(job, options, { cwd }) {
   if (options.modeSpecified) {
     nextJob.mode = options.mode;
   }
-  if (options.appearanceSpecified) {
-    nextJob.appearance = loadAppearanceOption(options.appearance, { cwd });
+  if (options.themeSpecified) {
+    nextJob.theme = loadThemeOption(options.theme, { cwd });
   }
   if (options.cameraSpecified) {
     nextJob.camera = parseCameraOption(options.camera);
@@ -427,7 +427,7 @@ export async function loadJobFromOptions(options, {
     input: options.input,
     mode,
     outputs: [output],
-    appearance: loadAppearanceOption(options.appearance, { cwd: resolvedCwd }),
+    theme: loadThemeOption(options.theme, { cwd: resolvedCwd }),
   };
   if (options.sizeProfile) {
     job.render = { sizeProfile: options.sizeProfile };
@@ -504,10 +504,10 @@ function normalizeSnapshotJobPacket(rawPayload) {
   return { single: true, jobs: [rawPayload] };
 }
 
-function appearanceThemeIdForJob(job) {
-  const appearance = job.appearance;
-  return typeof appearance === "string"
-    ? (appearance.trim().toLowerCase() || DEFAULT_RENDER_THEME_ID)
+function themeIdForJob(job) {
+  const theme = job.theme;
+  return typeof theme === "string"
+    ? (theme.trim().toLowerCase() || DEFAULT_RENDER_THEME_ID)
     : DEFAULT_RENDER_THEME_ID;
 }
 
@@ -548,7 +548,7 @@ function defaultRenderSize(job, output) {
     return [ORBIT_RENDER_WIDTH, ORBIT_RENDER_HEIGHT];
   }
   if (["dimensioned", "section", "labeled", "diagnostic"].includes(profile) ||
-      WORKBENCH_RENDER_THEME_IDS.has(appearanceThemeIdForJob(job))) {
+      WORKBENCH_RENDER_THEME_IDS.has(themeIdForJob(job))) {
     return [DIAGNOSTIC_RENDER_WIDTH, DIAGNOSTIC_RENDER_HEIGHT];
   }
   return [SIMPLE_RENDER_WIDTH, SIMPLE_RENDER_HEIGHT];
@@ -570,9 +570,6 @@ export function resolveRenderJob(rawJob, {
     throw new SnapshotError("render job must be an object");
   }
   const job = cloneJson(rawJob);
-  if ("theme" in job) {
-    throw new SnapshotError("render jobs use appearance; theme is reserved for saved appearance settings");
-  }
   if ("params" in job) {
     throw new SnapshotError("render jobs use implicitParameters; params is reserved for shortcut --params parsing");
   }
@@ -582,7 +579,7 @@ export function resolveRenderJob(rawJob, {
   }
   const renderSettings = isPlainObject(job.render) ? { ...job.render } : {};
   const graphicsSettings = isPlainObject(job.graphics) ? { ...job.graphics } : {};
-  const appearanceSettings = job.appearance || DEFAULT_RENDER_THEME_ID;
+  const themeSettings = job.theme || DEFAULT_RENDER_THEME_ID;
   const resolvedCwd = path.resolve(cwd);
   const inputPath = resolveInputPath(job.input, { cwd: resolvedCwd });
   const rootPath = path.dirname(inputPath);
@@ -595,7 +592,7 @@ export function resolveRenderJob(rawJob, {
     const [width, height] = resolveOutputSize({
       ...job,
       mode,
-      appearance: appearanceSettings,
+      theme: themeSettings,
       render: renderSettings,
     }, outputObject);
     const outputPath = String(outputObject.path || "");
@@ -612,7 +609,7 @@ export function resolveRenderJob(rawJob, {
   return {
     ...job,
     mode,
-    appearance: appearanceSettings,
+    theme: themeSettings,
     graphics: graphicsSettings,
     render: renderSettings,
     outputs: normalizedOutputs,

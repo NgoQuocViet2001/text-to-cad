@@ -1,7 +1,7 @@
 """Snapshot render core shared by the CAD and DXF skills.
 
 Everything here is format-agnostic: the headless browser driver, the job normalisation
-(camera, appearance, display, size profile), the mesh render path, and output writing. It
+(camera, theme, display, size profile), the mesh render path, and output writing. It
 knows nothing about STEP topology, drawings, or implicit models -- a caller resolves its
 own input to an asset URL and hands the result to :func:`render_resolved_job_packet`.
 
@@ -49,7 +49,7 @@ SUPPORTED_JOB_KEYS = frozenset(
         "input",
         "mode",
         "outputs",
-        "appearance",
+        "theme",
         "display",
         "render",
         "camera",
@@ -130,14 +130,14 @@ DISPLAY_MODE_ALIASES = {
     "unshaded": "unshaded",
     "flat": "unshaded",
     "rendered": "rendered",
-    "appearance": "rendered",
+    "theme": "rendered",
     "material": "rendered",
     "materials": "rendered",
     "wireframe": "wireframe",
     "wire_frame": "wireframe",
     "wire": "wireframe",
 }
-APPEARANCE_OPTION_KEYS = {
+THEME_OPTION_KEYS = {
     "materials",
     "background",
     "floor",
@@ -148,7 +148,7 @@ APPEARANCE_OPTION_KEYS = {
     # normalizeThemeSettings() emits modeColors unconditionally, so it is part
     # of the settings shape by construction. Rejecting it meant the repo's own
     # cloneThemePresetSettings() output could not be passed back to
-    # --appearance without hand-stripping a key first.
+    # --theme without hand-stripping a key first.
     "modeColors",
 }
 SETTINGS_KEY_HOMES = {
@@ -156,14 +156,14 @@ SETTINGS_KEY_HOMES = {
     "mode": "display",
     "exploded": "display",
     "clip": "display",
-    "materials": "appearance",
-    "background": "appearance",
-    "floor": "appearance",
-    "environment": "appearance",
-    "lighting": "appearance",
-    "colorMode": "appearance",
-    "projection": "appearance",
-    "modeColors": "appearance",
+    "materials": "theme",
+    "background": "theme",
+    "floor": "theme",
+    "environment": "theme",
+    "lighting": "theme",
+    "colorMode": "theme",
+    "projection": "theme",
+    "modeColors": "theme",
 }
 class SnapshotError(RuntimeError):
     pass
@@ -289,29 +289,29 @@ def load_display_option(raw_display: object, *, cwd: Path) -> dict[str, object]:
     )
     validate_display_settings_values(payload, source_label=str(display_path))
     return payload
-def load_appearance_option(raw_appearance: object, *, cwd: Path) -> object:
-    appearance = str(raw_appearance or DEFAULT_RENDER_THEME_ID).strip() or DEFAULT_RENDER_THEME_ID
-    if appearance.startswith("{"):
+def load_theme_option(raw_theme: object, *, cwd: Path) -> object:
+    theme = str(raw_theme or DEFAULT_RENDER_THEME_ID).strip() or DEFAULT_RENDER_THEME_ID
+    if theme.startswith("{"):
         return validate_direct_settings_payload(
-            load_json_text(appearance, "--appearance"),
-            option_name="--appearance",
-            source_label="--appearance",
-            allowed_keys=APPEARANCE_OPTION_KEYS,
-            setting_label="appearance settings",
+            load_json_text(theme, "--theme"),
+            option_name="--theme",
+            source_label="--theme",
+            allowed_keys=THEME_OPTION_KEYS,
+            setting_label="theme settings",
         )
 
-    appearance_path = Path(appearance) if Path(appearance).is_absolute() else cwd / appearance
-    looks_like_file = appearance.lower().endswith(".json") or "/" in appearance or "\\" in appearance
-    if not looks_like_file and not appearance_path.exists():
-        return appearance
-    if not appearance_path.exists():
-        raise SnapshotError(f"Appearance JSON file does not exist: {appearance}")
+    theme_path = Path(theme) if Path(theme).is_absolute() else cwd / theme
+    looks_like_file = theme.lower().endswith(".json") or "/" in theme or "\\" in theme
+    if not looks_like_file and not theme_path.exists():
+        return theme
+    if not theme_path.exists():
+        raise SnapshotError(f"Theme JSON file does not exist: {theme}")
     return validate_direct_settings_payload(
-        load_json_text(appearance_path.read_text(encoding="utf-8"), str(appearance_path)),
-        option_name="--appearance",
-        source_label=str(appearance_path),
-        allowed_keys=APPEARANCE_OPTION_KEYS,
-        setting_label="appearance settings",
+        load_json_text(theme_path.read_text(encoding="utf-8"), str(theme_path)),
+        option_name="--theme",
+        source_label=str(theme_path),
+        allowed_keys=THEME_OPTION_KEYS,
+        setting_label="theme settings",
     )
 def path_is_inside_or_equal(child: Path, parent: Path) -> bool:
     resolved_child = child.resolve()
@@ -347,10 +347,10 @@ def asset_url_for_path(file_path: Path, root_path: Path) -> str:
     )
     cache_key = sha256(cache_identity.encode("utf-8")).hexdigest()[:16]
     return f"{base_url}?v={cache_key}"
-def appearance_theme_id_for_job(job: Mapping[str, object]) -> str:
-    appearance = job.get("appearance")
-    if isinstance(appearance, str):
-        return appearance.strip().lower() or DEFAULT_RENDER_THEME_ID
+def theme_id_for_job(job: Mapping[str, object]) -> str:
+    theme = job.get("theme")
+    if isinstance(theme, str):
+        return theme.strip().lower() or DEFAULT_RENDER_THEME_ID
     return DEFAULT_RENDER_THEME_ID
 def normalize_size_profile(value: object) -> str:
     return str(value or "").strip().lower().replace("_", "-")
@@ -385,7 +385,7 @@ def default_render_size(job: Mapping[str, object], output: Mapping[str, object])
         or output.get("label")
     ):
         return DIAGNOSTIC_RENDER_WIDTH, DIAGNOSTIC_RENDER_HEIGHT
-    if profile == "diagnostic" or appearance_theme_id_for_job(job) in WORKBENCH_RENDER_THEME_IDS:
+    if profile == "diagnostic" or theme_id_for_job(job) in WORKBENCH_RENDER_THEME_IDS:
         return DIAGNOSTIC_RENDER_WIDTH, DIAGNOSTIC_RENDER_HEIGHT
     return SIMPLE_RENDER_WIDTH, SIMPLE_RENDER_HEIGHT
 def resolve_output_size(job: Mapping[str, object], output: Mapping[str, object]) -> tuple[int, int]:
@@ -437,20 +437,20 @@ def normalize_common_job(
                     "--params values for a parameter-sweep GIF"
                 )
 
-    # A job's own `appearance` string gets the SAME treatment as the
-    # `--appearance` flag: a saved-theme name stays a name, but a path or an
+    # A job's own `theme` string gets the SAME treatment as the
+    # `--theme` flag: a saved-theme name stays a name, but a path or an
     # inline JSON object is loaded into real settings here.
     #
-    # Without this a job saying `"appearance": "path/to/theme.json"` fell all
-    # the way through to `appearance_theme_id_for_job()`, which lowercases the
+    # Without this a job saying `"theme": "path/to/theme.json"` fell all
+    # the way through to `theme_id_for_job()`, which lowercases the
     # string and treats it as a saved-theme id. The lookup missed, the renderer
     # silently used the default workbench theme, and — because the resolved id
     # was then `workbench` — the size-profile logic further down also quietly
     # switched to diagnostic dimensions. Exit 0, no warning, a plausible but
     # wrong image. The CLI help has always promised that a file path works.
-    raw_appearance = job.get("appearance")
-    if isinstance(raw_appearance, str) and raw_appearance.strip():
-        job["appearance"] = load_appearance_option(raw_appearance, cwd=resolved_cwd)
+    raw_theme = job.get("theme")
+    if isinstance(raw_theme, str) and raw_theme.strip():
+        job["theme"] = load_theme_option(raw_theme, cwd=resolved_cwd)
 
     normalized_render = dict(job.get("render") if is_plain_object(job.get("render")) else {})
     normalized_render.pop("clip", None)

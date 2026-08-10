@@ -47,7 +47,7 @@ from cadgen.step_targets import ResolvedStepTarget, StepTopologyArtifact, StepTo
 # it too; a skill may not import another skill's code. Everything STEP-specific --
 # topology, selectors, parameter sidecars, the argument parser -- stays here.
 from cadgen.snapshot_core import (
-    APPEARANCE_OPTION_KEYS,
+    THEME_OPTION_KEYS,
     BatchSnapshotRenderer,
     COMPLEX_ASSEMBLY_LARGE_RENDER_HEIGHT,
     COMPLEX_ASSEMBLY_LARGE_RENDER_WIDTH,
@@ -86,14 +86,14 @@ from cadgen.snapshot_core import (
     SnapshotError,
     TOPOLOGY_DISPLAY_MODES,
     WORKBENCH_RENDER_THEME_IDS,
-    appearance_theme_id_for_job,
+    theme_id_for_job,
     asset_url_for_path,
     content_type_for_path,
     default_render_size,
     encode_path_param,
     explicit_size_profile,
     is_plain_object,
-    load_appearance_option,
+    load_theme_option,
     load_display_option,
     load_json_text,
     max_output_size,
@@ -145,7 +145,7 @@ IMPLICIT_SUPPORTED_RENDER_MODES = {"view", "orbit"}
 # Must stay in step with what cadjs `normalizeThemeSettings()` actually reads.
 # `colorMode` and `projection` were missing even though the renderer consumes
 # both (themeSettings.js reads `source.colorMode` / `source.projection`) and the
-# CLI help states "Projection is a theme trait taken from the appearance" — so
+# CLI help states "Projection is a theme trait taken from the theme" — so
 # an authored theme carrying either was rejected as malformed.
 #
 # `edges` is deliberately NOT here: edge settings belong in display JSON, which
@@ -166,8 +166,8 @@ class SnapshotOptions:
     input: str = ""
     output: str = ""
     mode: str = "view"
-    appearance: object = DEFAULT_RENDER_THEME_ID
-    appearance_specified: bool = False
+    theme: object = DEFAULT_RENDER_THEME_ID
+    theme_specified: bool = False
     display: object = ""
     display_specified: bool = False
     camera: object = "iso"
@@ -195,9 +195,9 @@ def help_text() -> str:
     return """Usage:
   python scripts/snapshot --job render-job.json
   python scripts/snapshot --job -
-  python scripts/snapshot --input models/part.step --output /tmp/part.png --appearance workbench
+  python scripts/snapshot --input models/part.step --output /tmp/part.png --theme workbench
 
-Shortcut flags are for common STEP/STP snapshots. --job accepts one render job, an array of render jobs, or { "jobs": [...] }. Every job input must be a relative or absolute .step/.stp path, a same-stem Python generator, a direct .glb/.stl/.3mf mesh, a .implicit.js model, or a .urdf/.srdf/.sdf robot description; direct DXF/G-code inputs are unsupported. Mesh inputs render shaded solid through the shared mesh path and support camera, display projection (orthographic/perspective), appearance, size-profile, orbit, and list output, but reject STEP-only options: --params/stepParameters, --focus/--hide selector refs, exploded and non-solid display modes, and section mode. Implicit (.implicit.js) inputs render through the shared runtime's raymarch backend and support camera, appearance, and orbit output; they reject the same STEP-only options plus list/section modes (no part topology). Robot (.urdf/.srdf/.sdf) inputs assemble their link meshes and render through the shared mesh path, supporting camera, projection, appearance, size-profile, orbit and list output; pose them with the job field "jointValues" (an object of joint name to degrees, defaulting to the rest pose) rather than --params, which is STEP-only. The default appearance is the workbench saved theme. --appearance accepts a saved theme name, an inline JSON appearance settings object, or a JSON appearance settings file path. --display accepts solid, rendered, transparent, hidden_edges, hidden_lines_removed, unshaded, wireframe, an inline JSON display settings object, or a JSON display settings file path. Projection is a theme trait taken from the appearance (the default workbench/light theme is orthographic; the presentation stage themes are perspective); pass {"projection":"perspective"} in display JSON only to override it for a one-off. Exploded view and edge styling belong in display JSON. The exploded view is a single slider: {"mode":"rendered","exploded":{"enabled":true,"amount":0.7},"edges":{"color":"#132232"}}. "amount" is the 0..1 spread; the layout itself is automatic (hierarchical radial explode about the assembly center) with nothing else to configure. Use --mode to pick the render mode: view (default, one still image per output), orbit (360-degree turntable GIF), section (cutaway sweep), or list (returns part occurrence refs as JSON; no output files). A .gif output is only valid in orbit mode or with animated --params values; static jobs must save stills. --camera accepts a preset, azimuth:elevation pair, or JSON object with preset, position, target, up, and zoom fields. --focus and --hide accept one or more selector refs such as #o1.2 for parts or subassemblies; pass the flag repeatedly or list refs after the flag. Option JSON is direct settings JSON, not a wrapped job fragment. Full JSON jobs use top-level appearance and display. Use --view-labels to burn the camera/view label into shortcut outputs. Use --params with STEP parameter sidecar JSON values. A generated model declares its sidecar from gen_step(); an imported .step/.stp declares nothing, so pass --params-path (job field "stepParametersPath") naming the JS sidecar beside it -- --params alone is rejected there, and --params-path is rejected on a generated model, whose sidecar belongs in its .step.py. Use --size-profile for default dimensions such as simple, diagnostic, labeled, assembly, presentation, orbit, or contact-sheet. Output file names are saved with a shared UTC seconds timestamp before the extension. Use --debug (or a job-level "debug": true field) to add a "debug" section to --json output reporting how each STEP/STP artifact was resolved: source ("generated" from a .step.py generator vs. "imported" direct STEP), whether it was an assembly, whether it was served from cache or rebuilt, whether assembly selectors were re-extracted, and how long artifact resolution took. Everyday snapshot usage does not need --debug; it exists for diagnosing slow or unexpected renders.
+Shortcut flags are for common STEP/STP snapshots. --job accepts one render job, an array of render jobs, or { "jobs": [...] }. Every job input must be a relative or absolute .step/.stp path, a same-stem Python generator, a direct .glb/.stl/.3mf mesh, a .implicit.js model, or a .urdf/.srdf/.sdf robot description; direct DXF/G-code inputs are unsupported. Mesh inputs render shaded solid through the shared mesh path and support camera, display projection (orthographic/perspective), theme, size-profile, orbit, and list output, but reject STEP-only options: --params/stepParameters, --focus/--hide selector refs, exploded and non-solid display modes, and section mode. Implicit (.implicit.js) inputs render through the shared runtime's raymarch backend and support camera, theme, and orbit output; they reject the same STEP-only options plus list/section modes (no part topology). Robot (.urdf/.srdf/.sdf) inputs assemble their link meshes and render through the shared mesh path, supporting camera, projection, theme, size-profile, orbit and list output; pose them with the job field "jointValues" (an object of joint name to degrees, defaulting to the rest pose) rather than --params, which is STEP-only. The default theme is the workbench saved theme. --theme accepts a saved theme name, an inline JSON theme settings object, or a JSON theme settings file path. --display accepts solid, rendered, transparent, hidden_edges, hidden_lines_removed, unshaded, wireframe, an inline JSON display settings object, or a JSON display settings file path. Projection is a theme trait taken from the theme (the default workbench/light theme is orthographic; the presentation stage themes are perspective); pass {"projection":"perspective"} in display JSON only to override it for a one-off. Exploded view and edge styling belong in display JSON. The exploded view is a single slider: {"mode":"rendered","exploded":{"enabled":true,"amount":0.7},"edges":{"color":"#132232"}}. "amount" is the 0..1 spread; the layout itself is automatic (hierarchical radial explode about the assembly center) with nothing else to configure. Use --mode to pick the render mode: view (default, one still image per output), orbit (360-degree turntable GIF), section (cutaway sweep), or list (returns part occurrence refs as JSON; no output files). A .gif output is only valid in orbit mode or with animated --params values; static jobs must save stills. --camera accepts a preset, azimuth:elevation pair, or JSON object with preset, position, target, up, and zoom fields. --focus and --hide accept one or more selector refs such as #o1.2 for parts or subassemblies; pass the flag repeatedly or list refs after the flag. Option JSON is direct settings JSON, not a wrapped job fragment. Full JSON jobs use top-level theme and display. Use --view-labels to burn the camera/view label into shortcut outputs. Use --params with STEP parameter sidecar JSON values. A generated model declares its sidecar from gen_step(); an imported .step/.stp declares nothing, so pass --params-path (job field "stepParametersPath") naming the JS sidecar beside it -- --params alone is rejected there, and --params-path is rejected on a generated model, whose sidecar belongs in its .step.py. Use --size-profile for default dimensions such as simple, diagnostic, labeled, assembly, presentation, orbit, or contact-sheet. Output file names are saved with a shared UTC seconds timestamp before the extension. Use --debug (or a job-level "debug": true field) to add a "debug" section to --json output reporting how each STEP/STP artifact was resolved: source ("generated" from a .step.py generator vs. "imported" direct STEP), whether it was an assembly, whether it was served from cache or rebuilt, whether assembly selectors were re-extracted, and how long artifact resolution took. Everyday snapshot usage does not need --debug; it exists for diagnosing slow or unexpected renders.
 """
 
 
@@ -268,13 +268,13 @@ def parse_snapshot_args(argv: Sequence[str]) -> SnapshotOptions:
             index += 1
         elif arg.startswith("--mode="):
             options.mode = arg[len("--mode=") :]
-        elif arg == "--appearance":
-            options.appearance = parse_required_value(argv, index, arg)
-            options.appearance_specified = True
+        elif arg == "--theme":
+            options.theme = parse_required_value(argv, index, arg)
+            options.theme_specified = True
             index += 1
-        elif arg.startswith("--appearance="):
-            options.appearance = arg[len("--appearance=") :]
-            options.appearance_specified = True
+        elif arg.startswith("--theme="):
+            options.theme = arg[len("--theme=") :]
+            options.theme_specified = True
         elif arg == "--display":
             options.display = parse_required_value(argv, index, arg)
             options.display_specified = True
@@ -393,7 +393,7 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
             options.params_specified,
             options.params_path_specified,
             options.display_specified,
-            options.appearance_specified,
+            options.theme_specified,
             options.camera_specified,
             option_focus_hide_specified(options),
         ]
@@ -403,8 +403,8 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
     merge_focus_hide_options(next_job, options)
     if options.debug:
         next_job["debug"] = True
-    if options.appearance_specified:
-        next_job["appearance"] = load_appearance_option(options.appearance, cwd=cwd)
+    if options.theme_specified:
+        next_job["theme"] = load_theme_option(options.theme, cwd=cwd)
     if options.params_specified:
         next_job["stepParameters"] = parse_params_option(options.params)
     if options.params_path_specified:
@@ -472,7 +472,7 @@ def load_job_from_options(
         "input": options.input,
         "mode": options.mode,
         "outputs": [] if options.mode == "list" else [output],
-        "appearance": load_appearance_option(options.appearance, cwd=resolved_cwd),
+        "theme": load_theme_option(options.theme, cwd=resolved_cwd),
         "render": {"viewLabels": options.view_labels},
     }
     if options.size_profile:
@@ -944,8 +944,6 @@ def resolve_render_job(
     if not is_plain_object(raw_job):
         raise SnapshotError("render job must be an object")
     job = copy.deepcopy(raw_job)
-    if "theme" in job:
-        raise SnapshotError("render jobs use appearance; theme is reserved for saved appearance settings")
     if "params" in job:
         raise SnapshotError("render jobs use stepParameters; params is reserved for shortcut --params parsing")
     if "paramsPath" in job:

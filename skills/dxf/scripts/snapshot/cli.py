@@ -58,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", "-o", required=True, help="Output .png (view mode) or .gif (orbit mode).")
     parser.add_argument("--mode", default="view", choices=SUPPORTED_MODES, help="view (default) or orbit.")
     parser.add_argument("--camera", help="A preset name, an azimuth:elevation pair, or a JSON camera object.")
-    parser.add_argument("--appearance", help="A saved theme name, inline appearance JSON, or a JSON file path.")
+    parser.add_argument("--theme", help="A saved theme name, inline theme JSON, or a JSON file path.")
     parser.add_argument("--size-profile", dest="size_profile", help="Default dimensions, e.g. simple or presentation.")
     parser.add_argument("--width", type=int, help="Render width in pixels.")
     parser.add_argument("--height", type=int, help="Render height in pixels.")
@@ -97,8 +97,8 @@ def resolve_job(args: argparse.Namespace, *, cwd: Path) -> dict[str, object]:
     job: dict[str, object] = {"mode": args.mode, "outputs": [{"path": args.output}]}
     if args.camera:
         job["camera"] = args.camera
-    if args.appearance:
-        job["appearance"] = args.appearance
+    if args.theme:
+        job["theme"] = args.theme
     if args.size_profile:
         job["sizeProfile"] = normalize_size_profile(args.size_profile)
     if args.width is not None:

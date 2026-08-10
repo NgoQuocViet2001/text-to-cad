@@ -62,7 +62,7 @@ import {
   RENDER_VIEW_PRESETS,
   rendererDataUrlWithOptionalLabel as sharedRendererDataUrlWithOptionalLabel,
   resolveRenderView,
-  resolveAppearanceSettings,
+  resolveThemeSettings,
   shouldBurnInViewLabels as sharedShouldBurnInViewLabels
 } from "./renderOptions.js";
 import {
@@ -118,8 +118,8 @@ function resolveRenderSceneScale(job = {}, meshData = {}) {
   });
 }
 
-function resolveAppearance(job = {}) {
-  return resolveAppearanceSettings(job, { defaultThemeId: DEFAULT_RENDER_THEME_ID });
+function resolveTheme(job = {}) {
+  return resolveThemeSettings(job, { defaultThemeId: DEFAULT_RENDER_THEME_ID });
 }
 
 function resolveView(camera = "iso") {
@@ -671,7 +671,7 @@ export function resolveOutputCameraProjection(context, cameraSpec) {
 
 export function renderJobContext(meshData, job = {}) {
   const mode = String(job.mode || "view").trim().toLowerCase();
-  const theme = resolveAppearance(job);
+  const theme = resolveTheme(job);
   const sceneScale = resolveRenderSceneScale(job, meshData);
   const sourceKind = String(job.resolved?.kind || job.kind || meshData?.sourceFormat || "").trim().toLowerCase();
   const stepDisplayEnabled = sourceKind === "step" || sourceKind === "stp";
@@ -702,7 +702,7 @@ export function renderJobContext(meshData, job = {}) {
   });
   const displayEdgeSettings = resolveDisplayEdgeSettings(displaySettings);
   // A theme that opts into its own outline (e.g. Terminal's neon-green
-  // linework) drives the edge appearance; other themes leave it to display.
+  // linework) drives the edge theme; other themes leave it to display.
   const themeEdges = theme?.edges;
   const baseEdgeSettings = themeEdges && themeEdges.enabled === true
     ? normalizeDisplayEdgeSettings({ ...displayEdgeSettings, ...themeEdges })

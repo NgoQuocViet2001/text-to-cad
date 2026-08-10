@@ -50,7 +50,7 @@ test("shortcut job shape is built by the JavaScript snapshot CLI", async () => {
     "480",
     "--params",
     "{\"radius\":24}",
-    "--appearance",
+    "--theme",
     "workbench",
     "--graphics",
     "{\"detail\":2,\"resolutionScale\":3}",
@@ -66,7 +66,7 @@ test("shortcut job shape is built by the JavaScript snapshot CLI", async () => {
   assert.equal(job.outputs[0].camera, "front");
   assert.equal(job.outputs[0].width, 640);
   assert.equal(job.outputs[0].height, 480);
-  assert.equal(job.appearance, "workbench");
+  assert.equal(job.theme, "workbench");
   assert.deepEqual(job.graphics, { detail: 2, resolutionScale: 3 });
   assert.deepEqual(job.render, { sizeProfile: "simple" });
   assert.deepEqual(job.implicitParameters, { radius: 24 });
@@ -120,7 +120,7 @@ test("render job derives asset root from input parent", () => withTempImplicitMo
   assert.equal(job.resolved.kind, "implicit");
   assert.equal(job.resolved.rootPath, models);
   assert.match(job.resolved.inputUrl, /^\/__render_asset\/orb\.implicit\.js\?v=/u);
-  assert.equal(job.appearance, "workbench");
+  assert.equal(job.theme, "workbench");
   assert.deepEqual(job.render, {});
   assert.deepEqual(job.graphics, {});
   assert.equal(job.outputs[0].width, 1600);
@@ -203,15 +203,7 @@ test("non implicit input files are rejected", () => {
   }
 });
 
-test("legacy top-level theme and params fields are rejected", () => withTempImplicitModel(({ root }) => {
-  assert.throws(
-    () => resolveRenderJobPacket({
-      input: "models/implicit-cad/orb.implicit.js",
-      theme: "dark",
-      outputs: [{ path: "tmp/orb.png" }],
-    }, { cwd: root }),
-    /use appearance/u
-  );
+test("legacy top-level params field is rejected", () => withTempImplicitModel(({ root }) => {
   assert.throws(
     () => resolveRenderJobPacket({
       input: "models/implicit-cad/orb.implicit.js",
