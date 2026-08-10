@@ -937,6 +937,12 @@ def resolve_implicit_render_job(
             "cannot be exploded"
         )
 
+    # Raymarched shadows are ON in the viewer and OFF here unless asked for. A snapshot
+    # renders no floor plane, so the MESH path casts no shadow at all -- leaving the
+    # implicit default alone would make one format drop a shadow and every other format
+    # not, for no reason a reader could infer. Self-shading already carries the form.
+    job = {**job, "graphics": {"shadows": False, **(job.get("graphics") if is_plain_object(job.get("graphics")) else {})}}
+
     asset_url = asset_url_for_path(input_path, root_path)
     resolved: dict[str, object] = {
         "rootPath": str(root_path),
