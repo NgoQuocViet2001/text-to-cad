@@ -29,6 +29,7 @@ from cadgen.catalog import (
     source_from_path,
 )
 from cadgen.cli_logging import CliLogger
+from cadgen._internal.cli_locking import lock_wait_notice
 from cadgen._internal.file_metadata import text_to_cad_identity_metadata, write_dxf_text_to_cad_metadata
 from cadgen._internal.package_freshness import (
     ASSEMBLY_PACKAGE_SCHEMA_VERSION,
@@ -980,7 +981,7 @@ def run_script_generator(
     # count, so this reports a phase, not a fraction. Readers estimate it against the
     # duration the model's previous build recorded.
     resolve_progress(progress).phase(PHASE_GENERATE)
-    with _track_spec_generation(spec, generator_name, intent=lock_intent):
+    with _track_spec_generation(spec, generator_name, intent=lock_intent, logger=logger):
         return _run_script_generator_inner(
             spec,
             generator_name,
@@ -1809,6 +1810,7 @@ def _track_spec_generation(
     generator_name: str,
     *,
     intent: str = "write",
+    logger: CliLogger | None = None,
 ) -> contextlib.AbstractContextManager[object]:
     """Coordinate a generator run against the model's render package.
 
@@ -1818,15 +1820,21 @@ def _track_spec_generation(
     writes the package nothing -- an export, an on-demand topology extraction, an
     interference check -- takes the generator lock instead. Taking the writer lock for
     those made a fully-current model report `generating` with an empty bar for the whole
-    length of an export; taking nothing at all would let a real build run the same
-    generator concurrently.
+    length of an export.
+
+    The two sentinels are different files, so they do NOT exclude each other: a build and
+    an export of one model each run its ``gen_step()``, concurrently, in separate
+    processes. That is duplicated work rather than a hazard (no shared in-process state,
+    different outputs), and it is the price of letting a reader tell "being rewritten"
+    from "generator busy" -- see :func:`cadgen.coordination.generator_busy`.
     """
     output_dir = _spec_output_dir(spec, generator_name)
     if output_dir is None:
         return contextlib.nullcontext()
+    on_wait = lock_wait_notice(logger, spec.source_ref)
     if intent == "generate":
-        return generator_busy(STEP_PACKAGE, output_dir)
-    return exclusive(write_lock_path(output_dir))
+        return generator_busy(STEP_PACKAGE, output_dir, on_wait=on_wait)
+    return exclusive(write_lock_path(output_dir), on_wait=on_wait)
 
 
 def _run_with_spec_generation_status(
@@ -1836,6 +1844,7 @@ def _run_with_spec_generation_status(
     *,
     skip_if_current: Callable[[EntrySpec], bool] | None = None,
     progress_sink: object | None = None,
+    logger: CliLogger | None = None,
 ) -> object:
     """Run ``action`` while holding the model's build lock, reporting its progress.
 
@@ -1851,11 +1860,15 @@ def _run_with_spec_generation_status(
     ``action`` is called as ``action(spec, run)``; ``run`` is the progress reporter.
     """
     kind = DRAWING_PACKAGE if generator_name == "gen_dxf" else STEP_PACKAGE
+    # No output dir means no lock, so there is nothing to wait on and no ref to name in a
+    # notice -- and a spec that never reaches a lock is not required to have one.
+    output_dir = _spec_output_dir(spec, generator_name)
     with artifact_build(
         kind,
-        _spec_output_dir(spec, generator_name),
+        output_dir,
         is_current=(lambda: bool(skip_if_current(spec))) if skip_if_current is not None else None,
         sink=progress_sink,
+        on_wait=lock_wait_notice(logger, spec.source_ref) if output_dir is not None else None,
     ) as run:
         if run.skipped:
             return _SkippedGeneration(spec)
@@ -2250,6 +2263,7 @@ def generate_step_targets(
             build,
             skip_if_current=_built_by_a_peer,
             progress_sink=progress_sink,
+            logger=logger,
         )
 
     _run_selected_specs(
@@ -2347,6 +2361,7 @@ def generate_dxf_targets(
                     tracked_spec, "gen_dxf", logger=logger, progress=reporter
                 ),
                 skip_if_current=_built_by_a_peer,
+                logger=logger,
             ),
             logger=logger,
             success_message=_generated_dxf_summary,
