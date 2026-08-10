@@ -635,19 +635,48 @@ function renderSectionPng(segments, width, height, themeSettings, {
   return canvas.toDataURL("image/png");
 }
 
+// Coordinates are millimetres. The mesh pipeline emits full float64 precision
+// (-2449.9999046325684 for what is 2450 mm), which is 16 significant figures of noise per
+// number, six numbers per part. Three decimals is a nanometre -- far below any tolerance
+// this repo models to -- and costs about a fifth of the payload.
+const LIST_BOUNDS_DECIMALS = 3;
+
+function roundedBounds(bounds) {
+  if (!bounds || typeof bounds !== "object") {
+    return null;
+  }
+  const axis = (values) => (Array.isArray(values)
+    ? values.map((value) => {
+      const numeric = toFiniteNumber(value, 0);
+      return Number(numeric.toFixed(LIST_BOUNDS_DECIMALS));
+    })
+    : null);
+  const min = axis(bounds.min);
+  const max = axis(bounds.max);
+  return min && max ? { min, max } : null;
+}
+
+// The parts inventory: what is in this model and what can be selected.
+//
+// This is the ONLY output whose size grows with the model -- everything else in the CLI
+// surface is constant (a 600-part assembly logs the same ~100 bytes a single part does).
+// So it is the one payload where redundancy is measured in tens of thousands of tokens:
+// on a 600-part rover the previous shape was 294 KB, of which `id`, `occurrenceId` and
+// `ref` were the same string three times over (identical in 600/600 parts), `label`
+// duplicated `name` (600/600), and the coordinates carried 16 significant figures.
+//
+// `ref` survives rather than `id`/`occurrenceId` because it is the form that goes
+// straight back into `--focus` / `--hide` / `inspect`; the bare id is one string slice
+// away for anyone who needs it.
 export function listRenderableParts(meshData) {
   return toArray(meshData.parts).map((part, index) => {
     const occurrenceId = String(part?.occurrenceId || part?.id || "");
     return {
-      id: String(part?.id || part?.occurrenceId || `part:${index}`),
-      occurrenceId,
-      // Selector ref an agent can paste straight into snapshot --focus/--hide or inspect.
       ref: occurrenceId ? `#${occurrenceId}` : "",
       name: String(part?.name || part?.label || part?.id || `Part ${index + 1}`),
-      label: String(part?.label || part?.name || part?.id || `Part ${index + 1}`),
       triangleCount: Math.max(0, Math.floor(toFiniteNumber(part?.triangleCount, 0))),
       vertexCount: Math.max(0, Math.floor(toFiniteNumber(part?.vertexCount, 0))),
-      bounds: part?.bounds || null
+      bounds: roundedBounds(part?.bounds)
     };
   });
 }
@@ -962,7 +991,7 @@ export async function captureModel(viewport, captureOptions = {}) {
       ok: true,
       mode,
       parts: listRenderableParts(meshData),
-      bounds: modelBounds,
+      bounds: roundedBounds(modelBounds) || modelBounds,
       warnings
     };
   }

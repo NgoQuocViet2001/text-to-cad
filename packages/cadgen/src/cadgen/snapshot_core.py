@@ -914,9 +914,15 @@ def write_render_outputs(result: Mapping[str, object]) -> None:
     for output in outputs:
         if is_plain_object(output):
             write_output_payload(output)
+# stdout is read by an agent far more often than by a person, and indentation is pure
+# volume: on a 600-part list payload it was 38% of 294 KB. A human who wants it laid out
+# pipes through `jq .`; an agent that has to pay for the whitespace cannot get it back.
+_JSON = {"separators": (",", ":")}
+
+
 def print_render_result(result: Mapping[str, object], *, json_output: bool = False, stdout: Any = sys.stdout) -> None:
     if json_output:
-        stdout.write(f"{json.dumps(result, indent=2)}\n")
+        stdout.write(f"{json.dumps(result, **_JSON)}\n")
         return
     if isinstance(result.get("jobs"), list):
         for job_result in result["jobs"]:
@@ -927,10 +933,10 @@ def print_render_result(result: Mapping[str, object], *, json_output: bool = Fal
         return
     outputs = result.get("outputs")
     if not isinstance(outputs, list):
-        stdout.write(f"{json.dumps(result, indent=2)}\n")
+        stdout.write(f"{json.dumps(result, **_JSON)}\n")
         return
     if result.get("mode") == "list":
-        stdout.write(f"{json.dumps(result.get('parts') or [], indent=2)}\n")
+        stdout.write(f"{json.dumps(result.get('parts') or [], **_JSON)}\n")
         return
     for output in outputs:
         if is_plain_object(output) and output.get("path"):

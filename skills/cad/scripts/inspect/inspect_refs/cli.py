@@ -578,8 +578,10 @@ def _emit_result(args: argparse.Namespace, result: dict[str, object], text_forma
         if text:
             print(text)
         return
-    indent = None if bool(getattr(args, "quiet", False)) else 2
-    print(json.dumps(result, indent=indent, sort_keys=False))
+    # Compact, always. JSON here is read by an agent; indentation was 38% of the payload on
+    # a large model and a person who wants it laid out can pipe through `jq .`. --quiet
+    # still shapes the TEXT format (--format text), which is where it means something.
+    print(json.dumps(result, separators=(",", ":"), sort_keys=False))
 
 
 def _format_refs_text(result: dict[str, object], *, quiet: bool, verbose: bool) -> str:
