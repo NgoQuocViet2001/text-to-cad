@@ -168,12 +168,22 @@ fi
 # The builder bundles are esbuild output, never a symlink, so they are checked in BOTH
 # layouts -- unlike the vendored package copies below, which the development layout
 # deliberately replaces with links to their sources.
+# The node BUILDERS are tracked on develop, so they are checked in both layouts -- they are
+# esbuild output, never a symlink, and a stale one would ship.
 check_builders() {
   check_node_builders \
     "$BUILDERS_RUNTIME_DIR" "$CHECK_DIR/packages/cadjs/bin" \
     "skills/implicit-cad/scripts/packages/cadjs/bin" \
     "Run scripts/bundle/bundle-skill.sh implicit-cad and commit skills/implicit-cad/scripts/packages/cadjs." \
     "${BUILDER_ENTRIES[@]}"
+}
+
+# The snapshot RUNTIME is not. Unlike `cad` and `dxf`, this skill gitignores its generated
+# runtimes on develop and publishes them from build-test/main
+# (setup-implicit-cad-skill-symlink.sh asserts they stay untracked). So it can only be
+# checked where it is expected to EXIST -- the production layout. Checking it alongside the
+# builders meant a fresh clone, which is what CI is, reported it missing and failed.
+check_snapshot() {
   build_snapshot_runtime "$CHECK_DIR/snapshot-runtime" "$SNAPSHOT_BUILD_DEPS_DIR"
   check_snapshot_runtime "$SNAPSHOT_RUNTIME_DIR" "$CHECK_DIR/snapshot-runtime" \
     "skills/implicit-cad/scripts/snapshot/runtime" \
@@ -194,6 +204,7 @@ if [ "$MODE" = "check" ]; then
   stale=0
   check_implicitjs_package || stale=1
   check_builders || stale=1
+  check_snapshot || stale=1
   check_python_runtime \
     "$CADGEN_PACKAGE_DIR" "$CADGEN_RUNTIME_DIR" "$CHECK_DIR/packages/cadgen" \
     "skills/implicit-cad/scripts/packages/cadgen" \
