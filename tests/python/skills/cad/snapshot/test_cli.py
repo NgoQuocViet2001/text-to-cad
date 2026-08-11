@@ -629,6 +629,40 @@ class SnapshotCliTests(unittest.TestCase):
             packet = resolve_render_job_packet(job, cwd=root)
             self.assertEqual(packet["jobs"][0]["display"], {"projection": "orthographic"})
 
+    def test_json_output_omits_output_payload_blobs(self) -> None:
+        """--json must not echo the rendered bytes back. dataUrl/text are how the browser
+        returns them for write_output_payload to decode; by print time the file is on disk and
+        `path` names it. Echoing them cost 228 KB of stdout for one PNG and 1.7 MB -- ~445k
+        tokens -- for an orbit GIF. The one test that covered this path used an empty outputs
+        list, which is why it shipped."""
+        data_url = "data:image/png;base64," + "A" * 4096
+        svg_text = "<svg>" + "x" * 4096 + "</svg>"
+        result = {
+            "ok": True,
+            "jobs": [
+                {
+                    "ok": True,
+                    "mode": "view",
+                    "outputs": [
+                        {"path": "/tmp/a.png", "width": 800, "height": 600, "dataUrl": data_url},
+                        {"path": "/tmp/b.svg", "text": svg_text},
+                    ],
+                }
+            ],
+        }
+        stream = io.StringIO()
+        snapshot_main.print_render_result(result, json_output=True, stdout=stream)
+        printed = stream.getvalue()
+        self.assertNotIn("dataUrl", printed)
+        self.assertNotIn(data_url, printed)
+        self.assertNotIn(svg_text, printed)
+        # Everything a caller actually uses survives.
+        outputs = json.loads(printed)["jobs"][0]["outputs"]
+        self.assertEqual([output["path"] for output in outputs], ["/tmp/a.png", "/tmp/b.svg"])
+        self.assertEqual(outputs[0]["width"], 800)
+        # The caller's dict keeps its payload: write_output_payload reads the same object.
+        self.assertEqual(result["jobs"][0]["outputs"][0]["dataUrl"], data_url)
+
     def test_debug_reaches_rendered_json_output(self) -> None:
         """--debug diagnostics are attached at resolve time, but the printed result is the
         browser's return value — the render stage must merge them in or the help text's

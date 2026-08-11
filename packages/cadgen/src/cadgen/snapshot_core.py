@@ -967,10 +967,42 @@ def write_render_outputs(result: Mapping[str, object]) -> None:
 # pipes through `jq .`; an agent that has to pay for the whitespace cannot get it back.
 _JSON = {"separators": (",", ":")}
 
+# How the browser hands rendered bytes back for write_output_payload to decode. By the time
+# anything prints, that has already written the file -- the CLI writes before it prints -- so
+# these are a verbatim second copy of it, and the `path` beside them is what a caller needs.
+# Printing them put a base64 PNG on stdout (228 KB for one 1600x1200 view) or an entire orbit
+# GIF (1.7 MB, ~445k tokens), in the one output this release has spent its effort making
+# cheap: see the note above _JSON, which strips indentation for a fraction of that. Nothing
+# reads either key back from stdout.
+_OUTPUT_PAYLOAD_KEYS = ("dataUrl", "text")
+
+
+def _without_output_payloads(result: Mapping[str, object]) -> dict:
+    """``result`` minus the output payload blobs.
+
+    Returns a COPY, so a caller that still needs the payload -- write_output_payload reads the
+    same dict -- is unaffected by print order.
+    """
+    printable = dict(result)
+    jobs = printable.get("jobs")
+    if isinstance(jobs, list):
+        printable["jobs"] = [
+            _without_output_payloads(job) if is_plain_object(job) else job for job in jobs
+        ]
+    outputs = printable.get("outputs")
+    if isinstance(outputs, list):
+        printable["outputs"] = [
+            {key: value for key, value in output.items() if key not in _OUTPUT_PAYLOAD_KEYS}
+            if is_plain_object(output)
+            else output
+            for output in outputs
+        ]
+    return printable
+
 
 def print_render_result(result: Mapping[str, object], *, json_output: bool = False, stdout: Any = sys.stdout) -> None:
     if json_output:
-        stdout.write(f"{json.dumps(result, **_JSON)}\n")
+        stdout.write(f"{json.dumps(_without_output_payloads(result), **_JSON)}\n")
         return
     if isinstance(result.get("jobs"), list):
         for job_result in result["jobs"]:
@@ -981,7 +1013,9 @@ def print_render_result(result: Mapping[str, object], *, json_output: bool = Fal
         return
     outputs = result.get("outputs")
     if not isinstance(outputs, list):
-        stdout.write(f"{json.dumps(result, **_JSON)}\n")
+        # Nothing to summarise as "saved snapshot:" lines, so fall back to the raw result --
+        # stripped the same way, so an unexpected shape cannot reintroduce the payload.
+        stdout.write(f"{json.dumps(_without_output_payloads(result), **_JSON)}\n")
         return
     if result.get("mode") == "list":
         stdout.write(f"{json.dumps(result.get('parts') or [], **_JSON)}\n")
