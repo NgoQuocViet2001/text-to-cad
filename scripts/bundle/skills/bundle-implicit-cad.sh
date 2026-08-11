@@ -87,6 +87,7 @@ if [ "$PRINT_OUTPUTS" -eq 1 ]; then
   printf '%s\n' "${IMPLICITJS_RUNTIME_DIR#"$REPO_ROOT"/}"
   printf '%s\n' "${CADGEN_RUNTIME_DIR#"$REPO_ROOT"/}"
   printf '%s\n' "${BUILDERS_RUNTIME_DIR#"$REPO_ROOT"/}"
+  printf '%s\n' "${SNAPSHOT_RUNTIME_DIR#"$REPO_ROOT"/}"
   exit 0
 fi
 
