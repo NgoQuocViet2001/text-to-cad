@@ -221,8 +221,8 @@ gh workflow run release.yml --ref develop -f bump=patch
 
 One run bumps `VERSION` plus derived metadata on a
 `release/<version>` branch, opens a release PR, merges it into `develop`
-immediately, and then runs the publish, models-upload, web-app deploy, and
-tag/GitHub Release jobs in the same run. The release PR does not wait for its own CI checks; the
+immediately, and then runs the publish, docs deploy, and tag/GitHub Release
+jobs in the same run. The release PR does not wait for its own CI checks; the
 publish job repeats the full bundle and test validation against exactly what
 ships. The publish job ships to `main` only when the
 source version is newer than `main` and the latest semver tag, and refuses

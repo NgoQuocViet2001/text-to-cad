@@ -17,8 +17,8 @@ do not open PRs to `main` or push it directly.
 Do not bump the canonical release version in `VERSION` during
 normal development work. Ship releases only through the single `Release`
 GitHub Actions workflow, which handles the version bump, release PR, publish
-commit to `main`, models upload, web-app deploys, `cadgen` PyPI publish,
-semver tag, and GitHub Release in one run.
+commit to `main`, `cadgen` PyPI publish, docs deploy, semver tag, and GitHub
+Release in one run.
 
 When asked to publish, make, or ship a release, dispatch `Release` with its
 defaults: build from `develop` (`base_branch=develop`), publish to `main`
