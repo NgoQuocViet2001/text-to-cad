@@ -1,4 +1,354 @@
-# BUGS.md — text-to-cad repo issues hit during the chronograph build
+# BUGS.md — text-to-cad repo issues hit during the F-14D Tomcat build
+
+Running log of repo bugs, unexpected behavior, missing features, and doc gaps
+found while building `models/renders/f14d/` on `release/0.4.0`. Problems with
+the *aircraft* do not belong here — only problems with the repo. Format per
+entry: what I was doing, exact command, exact error/wrong output, workaround,
+blocked?, fixed?
+
+This model is almost entirely large-scale lofted compound curvature, so the
+loft/blend findings (§3–§7) are the ones worth reading first.
+
+---
+
+## 1. A theme JSON containing `edges` is rejected — and the repo's own example theme has one
+
+- **Doing:** authoring a presentation theme for critic comparisons, starting
+  from the repo's shipped example
+  `models/renders/hypercar/render/presentation_theme.json`.
+- **Command:**
+  ```
+  .venv/bin/python skills/cad/scripts/snapshot --job models/renders/f14d/render/out/body01_job.json
+  ```
+- **Exact error:**
+  ```
+  --theme JSON must be the theme settings object directly; unsupported keys: edges; edges belongs in display JSON
+  ```
+- **Why it matters:** the error message is good, but the only in-repo example of
+  a hand-authored presentation theme —
+  `models/renders/hypercar/render/presentation_theme.json`, 162 lines, ending in
+  a large `"edges": {...}` block — is exactly the shape the CLI now refuses. So
+  the documented-by-example path fails on the first run. Anyone copying it hits
+  this immediately.
+- **Workaround:** split the file — theme keys stay in
+  `render/presentation_theme.json`, and the `edges` block moves into a separate
+  `render/presentation_display.json` merged into the job's `display` object.
+  Implemented in `models/renders/f14d/render/shot.py`.
+- **Blocked:** no (~5 min). **Fixed:** no — logged only. The minimal repo fix is
+  to move the `edges` block out of
+  `models/renders/hypercar/render/presentation_theme.json` into a display JSON
+  the same way, but that changes another model's render output, so it is not
+  mine to make as a drive-by.
+
+## 2. `render.padding` is silently clamped to a 0.1 minimum, and framing is by bounding sphere
+
+- **Doing:** trying to fill the frame with a long thin fuselage
+  (18.3 m × 4.5 m × 2.5 m) by tightening padding.
+- **Command:** JSON job with `"render": {"sizeProfile": "assembly-large", "padding": 0.06}`.
+- **Wrong output:** no error, no warning, no change. The aircraft occupied about
+  a third of the frame width.
+- **Cause:** two things compounding.
+  `packages/cadjs/src/common/cadScene.js:2258` does
+  `Math.max(1 - (clamp(Number(padding) || 0, 0.1, 0.4) * 2), 0.1)` — any padding
+  below 0.1 becomes 0.1. Separately, framing is computed from the model's
+  bounding SPHERE, so an object whose length is 4× its width is framed by its
+  diagonal and can never fill the frame regardless of padding.
+  (Note `renderOptions.js:485` does *not* clamp, so the floor depends on which
+  path runs — worth reconciling.)
+- **Workaround:** per-view `zoom` in the camera JSON is the only lever that
+  actually crops in. Values are in `models/renders/f14d/render/shot.py`.
+- **Suggestion:** either honour padding below 0.1 or warn that it was clamped;
+  documenting that framing is sphere-based would have saved the guessing.
+- **Blocked:** no. **Fixed:** no (logged, routed around).
+
+## 3. `loft()` fails with a message that names nothing when sections disagree on point count
+
+- **Doing:** first attempt at the one-piece airframe skin — a smooth multi-section
+  loft through 63 closed section wires.
+- **Command:** `loft(faces)` from `models/renders/f14d/f14_parts/body.py`.
+- **Exact error:**
+  ```
+  ValueError: Recovery failed
+  The above exception was the direct cause of the following exception:
+  RuntimeError: Failed to create valid loft
+  ```
+- **What was actually wrong:** my sections had 36, 38, 46, 50, 51 and 52 points
+  depending on station, because samples where no component existed were dropped.
+  Every section was individually valid and **every adjacent PAIR lofted fine** —
+  only the full-set loft failed, and the error points at neither the station nor
+  the cause.
+- **Diagnosis that worked:** loft increasing prefixes (`faces[:k]` for
+  k = 5,10,20,30,45,62) to bracket the failure, and loft every adjacent pair to
+  rule out a single bad station. Worth adding to
+  `skills/cad/references/repair-loop.md` next to the existing "bisect by lofting
+  adjacent pairs" advice, which finds a *bad section* but not this.
+- **Workaround:** guarantee a fixed sample count per section.
+- **Blocked:** ~25 min. **Fixed:** no repo change; model-side fix.
+
+## 4. A disconnected section silently produces an invalid `Face`, and the failure surfaces far away
+
+- **Doing:** lofting the skin all the way to the tail.
+- **Wrong output:** aft of the beavertail a station cuts the two engine nacelles
+  as **two separate closed regions**. `Face(wire)` on that section raises
+  nothing and returns a Face with plausible `area`; only `Face.is_valid` is
+  False. The loft then fails with the §3 message, 60 stations away from the
+  cause.
+- **Workaround:** end the one-piece loft at the last connected station
+  (`X_SKIN_AFT`) and build the nozzles as separate bodies — which is the real
+  structural break anyway.
+- **Blocked:** no, once §3's bisection was in place. **Fixed:** no.
+- **Aside:** `Face.is_valid` is a **property**, not a method. Calling
+  `f.is_valid()` gives `TypeError: 'bool' object is not callable`, which reads
+  like a corrupted object rather than a spelling mistake, and cost a wasted
+  diagnostic run.
+
+## 5. LARGE-SCALE LOFTS: sections are matched BY INDEX, so non-feature-aligned sampling silently crumples the surface
+
+**The single most expensive finding of this build**, and the one that matters
+most for any model made of big blended surfaces.
+
+- **Doing:** lofting 59 full-width sections through a body whose half-width goes
+  from 0.01 m at the radome to 2.24 m at the glove.
+- **Wrong output:** exit 0. Valid solid. Watertight. Bilaterally symmetric.
+  `inspect` clean. And the whole aft fuselage rendered as **crumpled foil** —
+  fine longitudinal wrinkles over every square metre of it.
+- **Cause:** a loft interpolates its sections point index by point index. I was
+  sampling each station at cosine-spaced fractions of that station's own
+  half-width, so sample #40 sat on the nacelle crest at one station and out on
+  the glove at the next. The surface twists between stations to reconcile them.
+  Nothing reports this: it is a valid surface, just not the one intended.
+- **Fix (model-side):** sample on **rails** — compute the lateral position of
+  each feature line (nacelle axis, nacelle silhouette, forebody edge, outer
+  silhouette) per station and allocate a fixed number of points to each
+  rail-to-rail band, so index *i* means the same feature at every station. See
+  `rails()` / `half_samples()` in `models/renders/f14d/f14_parts/sections.py`.
+  Median inter-sample chord sagitta fell from 17.3 mm to 11.3 mm and the
+  wrinkling went away.
+- **Suggestion:** `skills/cad/references/build123d-modeling.md` already has an
+  excellent section on `Plane.rotated()` being a silent wrong-shape trap. This
+  belongs beside it — it is the same class of bug (valid geometry, wrong shape,
+  every deterministic check passes, only a render finds it) and it is
+  unavoidable for anyone lofting a varying-width body.
+- **Blocked:** ~40 min. **Fixed:** no repo change; documented here.
+
+## 6. LARGE-SCALE LOFTS: two silent ways a control curve ruins a surface
+
+Both produced valid, watertight, symmetric solids that looked wrong.
+
+- **Interpolating with `smoothstep` between control points makes a staircase.**
+  `lerp(v0, v1, smoothstep(x0, x1, x))` has **zero derivative at both ends of
+  every interval**, so the curve is flat at each control point and steep between
+  them. Lofting through curves built that way put a crease at every knot, the
+  full length of the fuselage. Replaced with monotone cubic (PCHIP) tangents.
+  Worth flagging because `smoothstep` is the obvious reach for "smooth
+  interpolation" and it is wrong for this.
+- **Measurement noise becomes surface ripple.** Station data traced off a
+  scanned drawing carries about a pixel of noise (≈8 mm here). A monotone
+  interpolant reproduces it exactly and the loft turns it into visible waves.
+  Two passes of a [1,2,1] kernel over the interior removed it without touching
+  the shape.
+- **Blocked:** no individually; together ~20 min. **Fixed:** model-side.
+
+## 7. LARGE-SCALE BLENDS: log-sum-exp smooth-max has unbounded curvature; sampling cannot save it
+
+- **Doing:** blending the forebody, nacelle, glove and tunnel volumes into one
+  section by smooth-max, so the transitions are continuous by construction
+  rather than filleted.
+- **Wrong output:** a hard crease where the inlet shelf meets the forebody
+  flank. Measured inter-sample chord sagitta there was 100 mm.
+  **Doubling the section sample count from 53 to 97 changed it to 86 mm** —
+  i.e. barely at all, because the corner is in the *function*, not the sampling.
+- **Fix:** the softplus form `max(a,b) + k*log1p(exp(-|a-b|/k))` perturbs the
+  surface everywhere and its curvature is unbounded as k shrinks. The
+  polynomial form with compact support (`h = clamp(0.5 + 0.5*(a-b)/k, 0, 1)`;
+  `b + (a-b)*h + k*h*(1-h)`) is exactly `max()` outside the blend band, has
+  curvature bounded by ~1/k, and adds at most k/4 of material — so k can be
+  opened up to 0.46 m without the shape ballooning.
+- **The deeper lesson**, which cost the most time: **a closed lobe that ends
+  inside the body is a cliff.** Any closed convex profile meets its own
+  silhouette on a vertical tangent. Where the forebody lobe closed between the
+  inlets, the shelf sat 0.23 m below it — a 50 mm-wide cliff that no blend width
+  and no sample density could fix. The fix is architectural: widen such a lobe
+  until it *overlaps* its neighbours, and cut the real feature back in
+  afterwards. Same for the canopy, which had to become its own lobe because one
+  half-width cannot serve both a 1.4 m fuselage and a 0.5 m canopy.
+- **Blocked:** ~35 min across two rounds. **Fixed:** model-side.
+
+## 8. Performance note (not a bug): smooth loft cost and quality
+
+For the record, since the docs warn about dense periodic spline profiles being
+fragile: a **smooth** (non-ruled) loft through 59 sections × 83 points each
+succeeds in ~9 s and produces a solid with **4 faces** — one continuous B-spline
+surface per side, no faceting at any render resolution. `ruled=True` on the same
+input takes 0.16 s but yields 118 faces and visible chordwise banding. Smooth is
+worth the 9 s here. No fragility observed at this size once §3–§7 were fixed.
+
+---
+
+## 9. Fusing DISJOINT solids returns a `ShapeList`, and the failure surfaces as a transform error
+
+- **Doing:** building striped ejection-seat handles -- alternating yellow/black
+  segments along one axis, each colour fused into a single leaf.
+- **Command:** `models/renders/f14d/f14_parts/cockpit.py`, `_fuse()` then
+  `Location * shape`.
+- **Exact error:**
+  ```
+  ValueError: other must be a list of Locations
+  ```
+  raised from `build123d/geometry.py:1757` in `Location.__mul__`.
+- **What was actually wrong:** `a + b` on two solids that do NOT touch returns a
+  `ShapeList`, not a Shape. Every alternate segment of a striped handle is
+  disjoint from the next one of the same colour, so this was the normal case,
+  not an edge case. `Location * ShapeList` then fails with a message about
+  *Locations*, which reads like a broken transform and sends you looking at the
+  placement code rather than at the fuse three frames up.
+- **Workaround:** `_fuse()` now collapses a `ShapeList` result into a single
+  `Compound`. One leaf, one colour, transformable.
+- **Blocked:** yes -- this module built nothing until fixed (~10 min).
+  **Fixed:** model-side.
+
+## 10. Stale render artifact: a generator that skips missing optional modules never rebuilds when one appears
+
+- **Doing:** the assembly entry imports each part module and skips the ones that
+  do not exist yet, so the aircraft stays renderable while builders work in
+  parallel (the same pattern the repo's own
+  `models/renders/hypercar/hypercar.step.py` uses).
+- **Wrong output:** after nine part modules landed on disk, `snapshot` rendered
+  the **airframe alone** -- no wings, no tails, no gear -- with no error and no
+  warning. It printed `resolving input (building render artifacts if needed)`
+  and reused the cached package.
+- **Cause:** the artifact's source-closure hash is computed from the modules the
+  generator actually imported AT BUILD TIME. When the first build ran the part
+  modules did not exist, so they were never in the closure -- and their later
+  appearance therefore cannot change the hash. The cache is self-consistent and
+  permanently stale.
+- **Workaround:** run `scripts/gen` on the entry explicitly after adding a
+  module rather than relying on snapshot's implicit resolution.
+- **Suggestion:** worth a line in `references/step-generation.md` -- the
+  skip-missing-modules pattern is genuinely useful for parallel work, and this
+  is its one sharp edge.
+- **Blocked:** ~15 min spent believing the parts had failed to build when they
+  had not. **Fixed:** no repo change.
+
+## 11. Boolean cost against a large lofted B-spline is PER-TOOL and superlinear -- a 44-cutter build ran 7 hours without finishing
+
+The most expensive finding of this build, and the one that governs how any
+model made of big blended surfaces should be structured.
+
+- **Doing:** cutting the real openings back into the one-piece airframe skin --
+  the boundary-layer diverter slot, the cockpit opening, and 41 shallow panel
+  recesses published by the part modules.
+- **Command:** `scripts/gen models/renders/f14d/f14d.step.py`, where
+  `airframe.py` does `skin - cutters` with 44 tools in ONE list operand.
+- **Wrong output:** no error, no progress. The generation progress file entered
+  `phase: "generate"` / `"Building geometry"` 3 ms after start and never updated
+  again; the process sat at 98 % CPU for **7 h 06 min** and was cancelled, still
+  inside a single uninterruptible call.
+- **Measured cost curve** (skin alone lofts in 21 s and is 3 faces):
+  ```
+  skin - 1  cosmetic cutter      24.2s   OK
+  skin - 4  cosmetic cutters     69.6s   OK
+  skin - 41 cosmetic cutters   > 900s    did not finish
+  skin - 3  structural cutters  348.2s   OK
+  ```
+  1 -> 4 tools is SUBLINEAR, then it breaks badly somewhere before 41. The 3
+  structural cutters cost ~116 s each because they are large and cut deep.
+- **Cause:** the skin is a single B-spline surface of roughly 4,900 control
+  points. A `sample` of the stalled process showed the main thread entirely in
+  `Extrema_ExtPS::Perform` / `Extrema_GenExtPS::Perform` -- point-to-surface
+  projection -- with `BSplSLib_Cache::BuildCache` and
+  `GeomAdaptor_Surface::RebuildCache` firing on nearly every evaluation. Cost is
+  driven by full-surface classification PER TOOL, not by how much material each
+  tool removes. OCC parallelises the intersection front-end (observed ~810 %
+  CPU) and then drops to a single thread for the rest, which is where the hours
+  go.
+- **Workaround / fix:** drop cosmetic recesses as booleans entirely. At 19 m
+  rendered to 1920 px, 1 px is ~10 mm, so a 4 mm groove is sub-pixel -- panel
+  lines read because the renderer's edge overlay draws feature edges, not
+  because the groove is resolvable. Keeping only the 3 structural cutters took
+  the same assembly from ">7 h, cancelled" to a complete build in ~10 min.
+- **Blocked:** yes, catastrophically -- 7 h. **Fixed:** model-side, in
+  `models/renders/f14d/f14d.step.py`.
+- **Suggestion:** `scripts/gen` giving *any* sign of life during a long
+  `gen_step()` would have turned this from "is it hung?" into "this is slow".
+  See also entry 4 of the earlier chronograph log, which is the same complaint.
+
+## 12. The cad-viewer skill cannot start from a lightweight worktree -- four undocumented symlinks and a build are needed
+
+The `cad` skill's handoff section is explicit and correct ("you must ALWAYS hand
+the explicit file path(s) to `$cad-viewer`"). The problem is purely that the
+documented one-liner does not work in a worktree.
+
+- **Command:** `npm --prefix skills/cad-viewer/scripts/viewer run start -- --host 127.0.0.1 --port 3262`
+- **Failure 1:** `Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'cadjs'
+  imported from viewer/scripts/directoryRoot.mjs`.
+  `skills/cad-viewer/scripts/viewer` is a SYMLINK to `viewer/`, not a
+  self-contained bundle, so "packaged Viewer runtime" still needs the worktree's
+  `node_modules` -- which `AGENTS.md` says worktrees deliberately do not have.
+- **Failure 2:** after symlinking `viewer/node_modules` from the main checkout,
+  the server starts and the CAD API answers, but `/` returns **404** -- `start`
+  serves a prebuilt bundle and there is no `viewer/dist` in a fresh worktree. A
+  working backend with no front end looks like a broken link, not a missing
+  build.
+- **Failure 3:** `npm --prefix viewer run build` then fails three times in a row,
+  one bare specifier at a time:
+  `Rollup failed to resolve import "implicitjs/common/camera.js"`, then
+  `three`, then `meshoptimizer`, each from `packages/cadjs/src/...`. This is the
+  SAME root cause as entry 1 of the chronograph log below -- it has now cost two
+  separate projects.
+- **Failure 4:** `meshoptimizer` is not under `packages/cadjs/node_modules`
+  anywhere in the repo; the only copy is `docs/node_modules/meshoptimizer`, so
+  the workaround is a symlink across an unrelated package.
+- **Workaround (all four):**
+  ```
+  ln -s <main>/viewer/node_modules viewer/node_modules
+  ln -s ../../implicitjs packages/cadjs/node_modules/implicitjs
+  ln -s <main>/packages/cadjs/node_modules/three packages/cadjs/node_modules/three
+  ln -s <main>/docs/node_modules/meshoptimizer packages/cadjs/node_modules/meshoptimizer
+  npm --prefix viewer run build
+  ```
+- **Blocked:** yes, ~40 min. **Fixed:** no -- worked around locally.
+- **Suggestion:** a "starting the Viewer from a lightweight worktree" section in
+  `skills/cad-viewer/SKILL.md`, and a pointer to the launcher command from the
+  `cad` skill's Handoff section, so the requirement and the means live together.
+
+## 13. The Viewer catalog skips dot-directories, so a model under one is invisible
+
+- **Doing:** opening a model that lived at
+  `models/renders/f14d/.review/full/full.step.py`.
+- **Wrong output:** the Viewer reported the file does not exist. Querying the
+  catalog with an explicit `?dir=` pointing INTO the hidden directory returned
+  the entry fine, but scanning from the `models` root listed only
+  `renders/f14d/f14d.step.py` -- everything under `.review/` was skipped.
+- **Cause:** the catalog scan ignores dot-directories. Reasonable by itself, but
+  it is invisible: the entry resolves by direct query and not by scan, so the
+  link 200s and the model still will not load.
+- **Workaround:** keep buildable entries out of dot-directories.
+- **Blocked:** no. **Fixed:** no.
+
+## 14. RETRACTED -- "render artifacts are not relocatable" was my own bad probe
+
+Logged during the build, then disproved. Recording it as retracted rather than
+deleting it, because the way it fooled me is the useful part.
+
+- **What I claimed:** that moving a built render package leaves the catalog
+  resolving the entry while every component asset 404s.
+- **Evidence I had:** `curl /__cad/asset?file=<...>.step.py` returned
+  `{"error":"Not found"}` for both a copied package AND, later, for a package
+  generated in place -- which is what should have tipped me off immediately.
+- **What was actually happening:** `/__cad/asset` serves raw files. A GENERATED
+  entry's render package is served through a different route, so probing
+  `/__cad/asset` with the `.step.py` path 404s no matter where the package
+  lives. The model loads correctly in the Viewer from both locations.
+- **The real lesson, and it is mine, not the repo's:** I verified a link at the
+  page level (HTTP 200) and then "confirmed" it with an endpoint I had not
+  checked was the right one, and reported a repo defect on that basis. Loading
+  the page in a browser -- the thing the user actually does -- took one call and
+  settled it. Check the artefact the way it is consumed, not the way that is
+  convenient to curl.
+- **Blocked:** no. **Fixed:** n/a -- there was no bug.
+
+# Appendix — earlier log: the chronograph build
 
 Running log of repo bugs, unexpected behavior, and doc gaps found while
 building `models/renders/moonwatch/`. Watch-model problems do not belong
