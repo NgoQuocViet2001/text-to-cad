@@ -165,11 +165,9 @@ if [ "$CLEAN" -eq 1 ]; then
   rm -rf "$CHECK_DIR"
 fi
 
-# The builder bundles are esbuild output, never a symlink, so they are checked in BOTH
-# layouts -- unlike the vendored package copies below, which the development layout
-# deliberately replaces with links to their sources.
-# The node BUILDERS are tracked on develop, so they are checked in both layouts -- they are
-# esbuild output, never a symlink, and a stale one would ship.
+# The node BUILDERS are tracked on develop, so they are checked in BOTH layouts -- they are
+# esbuild output, never a symlink, and a stale one would ship. The vendored package copies
+# below are not: the development layout deliberately replaces those with links to sources.
 check_builders() {
   check_node_builders \
     "$BUILDERS_RUNTIME_DIR" "$CHECK_DIR/packages/cadjs/bin" \
@@ -178,11 +176,11 @@ check_builders() {
     "${BUILDER_ENTRIES[@]}"
 }
 
-# The snapshot RUNTIME is not. Unlike `cad` and `dxf`, this skill gitignores its generated
-# runtimes on develop and publishes them from build-test/main
-# (setup-implicit-cad-skill-symlink.sh asserts they stay untracked). So it can only be
-# checked where it is expected to EXIST -- the production layout. Checking it alongside the
-# builders meant a fresh clone, which is what CI is, reported it missing and failed.
+# The snapshot runtime is tracked and checked the same way, exactly as `cad` and `dxf` track
+# theirs. It was briefly gitignored here and "published from build-test/main" instead --
+# which nothing did: the publish job stages with `git add -A`, so an ignored path never
+# reached main at all, and the shipped skill sat in Playwright for the full 300s timeout
+# with no render.html to load.
 check_snapshot() {
   build_snapshot_runtime "$CHECK_DIR/snapshot-runtime" "$SNAPSHOT_BUILD_DEPS_DIR"
   check_snapshot_runtime "$SNAPSHOT_RUNTIME_DIR" "$CHECK_DIR/snapshot-runtime" \
@@ -192,7 +190,10 @@ check_snapshot() {
 
 if [ "$MODE" = "check" ] && [ -L "$IMPLICITJS_RUNTIME_DIR" ]; then
   rm -rf "$CHECK_DIR"
-  check_builders || exit 1
+  stale=0
+  check_builders || stale=1
+  check_snapshot || stale=1
+  [ "$stale" -eq 0 ] || exit 1
   check_development_layout
   exit 0
 fi
