@@ -38,7 +38,7 @@ def validate_urdf_targets(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="validate",
+        prog="scripts/validate",
         description="Validate explicit URDF targets.",
     )
     parser.add_argument(

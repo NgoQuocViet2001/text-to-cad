@@ -46,7 +46,7 @@ def _targets_include_output_pairs(targets: Sequence[str]) -> bool:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="gen",
+        prog="scripts/gen",
         description=(
             "Build drawing-package render artifacts (and on-demand DXF exports) from "
             "Python gen_dxf() sources."

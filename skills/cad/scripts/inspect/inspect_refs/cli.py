@@ -29,14 +29,14 @@ def _inspect_api():
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="inspect",
+        prog="scripts/inspect",
         description="Inspect selector refs, geometry facts, and measurements.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  inspect refs STEP/foo.step '#f9' --detail --facts\n"
-            "  inspect measure STEP/foo.step --from '#f1' --to '#f2' --axis z\n"
-            "  inspect align STEP/foo.step --moving '#f1' --target '#f2' --mode flush --axis z\n"
+            "  scripts/inspect refs STEP/foo.step '#f9' --detail --facts\n"
+            "  scripts/inspect measure STEP/foo.step --from '#f1' --to '#f2' --axis z\n"
+            "  scripts/inspect align STEP/foo.step --moving '#f1' --target '#f2' --mode flush --axis z\n"
         ),
     )
     parser.add_argument(
@@ -53,9 +53,9 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  inspect refs STEP/foo.step '#f9' --detail --facts\n"
-            "  inspect refs STEP/foo.step '#f1' '#e2' --positioning\n"
-            "  inspect refs STEP/foo.step --input-file /tmp/refs.txt --planes\n"
+            "  scripts/inspect refs STEP/foo.step '#f9' --detail --facts\n"
+            "  scripts/inspect refs STEP/foo.step '#f1' '#e2' --positioning\n"
+            "  scripts/inspect refs STEP/foo.step --input-file /tmp/refs.txt --planes\n"
         ),
     )
     refs_parser.add_argument(
@@ -151,9 +151,9 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  inspect interfere models/car/car.step.py\n"
-            "  inspect interfere models/car/car.step.py --refs o1.1,o1.7\n"
-            "  inspect interfere models/car/car.step --tolerance 25\n"
+            "  scripts/inspect interfere models/car/car.step.py\n"
+            "  scripts/inspect interfere models/car/car.step.py --refs o1.1,o1.7\n"
+            "  scripts/inspect interfere models/car/car.step --tolerance 25\n"
         ),
     )
     interfere_parser.add_argument("entry", help="CAD STEP path or CAD entry target.")
@@ -185,9 +185,9 @@ def build_parser() -> argparse.ArgumentParser:
             "self-intersection, and positive volume. This is the geometry-soundness "
             "check; `refs --facts` reports counts and bounds and its \"ok\" field "
             "covers ref resolution only.\n"
-            "  inspect validate models/car/car.step.py\n"
-            "  inspect validate models/car/car.step.py --refs o1.1,o1.7\n"
-            "  inspect validate models/panel/panel.step.py --allow-open\n"
+            "  scripts/inspect validate models/car/car.step.py\n"
+            "  scripts/inspect validate models/car/car.step.py --refs o1.1,o1.7\n"
+            "  scripts/inspect validate models/panel/panel.step.py --allow-open\n"
         ),
     )
     validate_parser.add_argument("entry", help="CAD STEP path or CAD entry target.")

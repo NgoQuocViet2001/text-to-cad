@@ -41,7 +41,7 @@ def validate_srdf_targets(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="validate",
+        prog="scripts/validate",
         description="Validate explicit MoveIt2 SRDF targets against their paired URDF.",
     )
     parser.add_argument(
