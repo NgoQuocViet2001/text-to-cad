@@ -16,7 +16,6 @@ CLEAN=0
 PRINT_OUTPUTS=0
 
 IMPLICITJS_PACKAGE_DIR="$REPO_ROOT/packages/implicitjs"
-IMPLICITJS_RUNTIME_DIR="$REPO_ROOT/skills/implicit-cad/scripts/packages/implicitjs"
 # scripts/gen drives cadgen.implicit_artifact, so the skill vendors the Python package the
 # same way `cad` and `dxf` do.
 CADGEN_PACKAGE_DIR="$REPO_ROOT/packages/cadgen"
@@ -47,7 +46,7 @@ usage() {
 Usage:
   scripts/bundle/bundle-skill.sh implicit-cad [--check] [--clean]
 
-Bundles the implicitjs package copy used by skills/implicit-cad in production
+Bundles the production runtime used by skills/implicit-cad
 layouts.
 
 Options:
@@ -85,7 +84,6 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ "$PRINT_OUTPUTS" -eq 1 ]; then
-  printf '%s\n' "${IMPLICITJS_RUNTIME_DIR#"$REPO_ROOT"/}"
   printf '%s\n' "${CADGEN_RUNTIME_DIR#"$REPO_ROOT"/}"
   printf '%s\n' "${BUILDERS_RUNTIME_DIR#"$REPO_ROOT"/}"
   printf '%s\n' "${SNAPSHOT_RUNTIME_DIR#"$REPO_ROOT"/}"
@@ -108,51 +106,6 @@ require_dir() {
     echo "Missing $label: $path_to_check" >&2
     exit 1
   fi
-}
-
-sync_implicitjs_package() {
-  local target_dir="$1"
-  rm -rf "$target_dir"
-  mkdir -p "$target_dir"
-  rsync -a --delete \
-    --prune-empty-dirs \
-    --delete-excluded \
-    --exclude node_modules \
-    --exclude dist \
-    --exclude coverage \
-    --exclude tmp \
-    --exclude .vite \
-    --exclude .DS_Store \
-    "$IMPLICITJS_PACKAGE_DIR/" "$target_dir/"
-}
-
-check_implicitjs_package() {
-  local expected_dir="$CHECK_DIR/packages/implicitjs"
-  local label="${IMPLICITJS_RUNTIME_DIR#$REPO_ROOT/}"
-  local diff_path="${TMPDIR:-/tmp}/implicit-cad-skill-implicitjs-package-diff.txt"
-  if [ ! -d "$IMPLICITJS_RUNTIME_DIR" ]; then
-    echo "Missing generated implicitjs package runtime: $label" >&2
-    return 1
-  fi
-  if ! diff -qr \
-    -x node_modules \
-    -x dist \
-    -x coverage \
-    -x tmp \
-    -x .vite \
-    -x .DS_Store \
-    "$expected_dir" "$IMPLICITJS_RUNTIME_DIR" >"$diff_path"; then
-    cat "$diff_path" >&2
-    echo "" >&2
-    echo "Implicit CAD skill implicitjs package runtime is stale." >&2
-    return 1
-  fi
-  return 0
-}
-
-check_development_layout() {
-  "$REPO_ROOT/scripts/dev/setup-skill-symlink.sh" implicit-cad --check
-  echo "Implicit CAD skill is in development symlink layout; production package freshness is checked on build-test/main."
 }
 
 require_file "$IMPLICITJS_PACKAGE_DIR/package.json" "implicitjs package"
@@ -190,22 +143,10 @@ check_snapshot() {
     "Run scripts/bundle/bundle-skill.sh implicit-cad and commit skills/implicit-cad/scripts/snapshot/runtime."
 }
 
-if [ "$MODE" = "check" ] && [ -L "$IMPLICITJS_RUNTIME_DIR" ]; then
-  rm -rf "$CHECK_DIR"
-  stale=0
-  check_builders || stale=1
-  check_snapshot || stale=1
-  [ "$stale" -eq 0 ] || exit 1
-  check_development_layout
-  exit 0
-fi
-
 if [ "$MODE" = "check" ]; then
   rm -rf "$CHECK_DIR"
-  sync_implicitjs_package "$CHECK_DIR/packages/implicitjs"
 
   stale=0
-  check_implicitjs_package || stale=1
   check_builders || stale=1
   check_snapshot || stale=1
   check_python_runtime \
@@ -221,8 +162,6 @@ if [ "$MODE" = "check" ]; then
   fi
   echo "Implicit CAD skill production outputs are up to date."
 else
-  sync_implicitjs_package "$IMPLICITJS_RUNTIME_DIR"
-  echo "Bundled skills/implicit-cad/scripts/packages/implicitjs"
   vendor_python_package "$CADGEN_PACKAGE_DIR" "$CADGEN_RUNTIME_DIR"
   echo "Bundled skills/implicit-cad/scripts/packages/cadgen"
   bundle_node_builders "$BUILDERS_RUNTIME_DIR" "${BUILDER_ENTRIES[@]}"
