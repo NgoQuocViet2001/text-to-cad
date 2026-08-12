@@ -38,8 +38,8 @@ npm --prefix viewer install
 When running a tool manually, use that skill's interpreter:
 
 ```bash
-.venv/skills/cad/bin/python skills/cad/scripts/step --help
-.venv/skills/urdf/bin/python skills/urdf/scripts/urdf --help
+.venv/skills/cad/bin/python skills/cad/scripts/gen --help
+python3 skills/urdf/scripts/validate --help  # stdlib-only validator, no venv needed
 ```
 
 ## Link Skills Into Your Agent
@@ -103,10 +103,11 @@ live under `scripts/`.
 
 Write test, sample, and durable CAD/robot-description artifacts under `models/`;
 do not create ad hoc artifact directories elsewhere. When you need a scratch
-project, create it under this checkout, for example:
+project, create it under the fixture bucket it belongs in (for example
+`models/step/parts/my-test` for a standalone part), for example:
 
 ```bash
-mkdir -p models/experiments/my-test
+mkdir -p models/step/parts/my-test
 ```
 
 Then start your agent with `/path/to/text-to-cad` as the working directory and
@@ -114,13 +115,9 @@ ask it to write files under that scratch path. This keeps skill scripts,
 fixtures, generated sidecars, and Viewer links using the same repo-relative
 paths that CI and local checks expect.
 
-Only commit what belongs there. The File Policy section of
-[models/README.md](models/README.md) lists the file types `models/` accepts —
-CAD/robot sources, the 3D and fabrication outputs generated from them, and
-docs — and `tests/python/global/test_models_directory_policy.py` enforces that
-list against tracked files. Review media such as snapshot PNGs and orbit GIFs
-are not model artifacts: render them under `/tmp` and attach them to the pull
-request instead.
+Review media such as snapshot PNGs and orbit GIFs are not model artifacts:
+render them under `/tmp` and attach them to the pull request instead. `.gitignore`
+keeps them out of `models/`.
 
 ## Source Boundaries
 
@@ -216,7 +213,8 @@ settings — build from `develop` (`base_branch=develop`), publish to `main`
 draft) — and the input descriptions in `.github/workflows/release.yml` are
 authoritative. Choose the semver bump (`patch`, `minor`, or `major`) or an
 exact `set_version` deliberately for every release; if a release request does
-not specify one, confirm it rather than assuming:
+not specify one, confirm it rather than assuming. `bump=none` is not a release
+setting — see "Publishing without a version bump" below:
 
 ```bash
 gh workflow run release.yml --ref develop -f bump=patch
@@ -224,8 +222,8 @@ gh workflow run release.yml --ref develop -f bump=patch
 
 One run bumps `VERSION` plus derived metadata on a
 `release/<version>` branch, opens a release PR, merges it into `develop`
-immediately, and then runs the publish, models-upload, web-app deploy, and
-tag/GitHub Release jobs in the same run. The release PR does not wait for its own CI checks; the
+immediately, and then runs the publish, docs deploy, and tag/GitHub Release
+jobs in the same run. The release PR does not wait for its own CI checks; the
 publish job repeats the full bundle and test validation against exactly what
 ships. The publish job ships to `main` only when the
 source version is newer than `main` and the latest semver tag, and refuses
@@ -237,43 +235,118 @@ The GitHub Release is published immediately by default; set `publish=false` to
 review it as a draft first. Treat generated outputs as CI products, not edit
 targets.
 
+The publish job also uploads `packages/cadgen` to
+[PyPI](https://pypi.org/project/cadgen/). The upload runs after the production
+bundle is validated but BEFORE `main` is pushed: the publish tree pins
+`cadgen==<version>` from PyPI (`scripts/release/pin-cadgen-requirements.sh`
+rewrites the editable requirement lines), so a failed PyPI upload must block the
+release rather than ship a `main` whose skill installs cannot resolve. The PyPI version always
+equals `VERSION`; `sync-version.mjs` stamps
+`packages/cadgen/pyproject.toml` and the publish job refuses to upload on a
+mismatch. Uploads use `skip-existing`, so a rerun after a post-upload failure
+(for example a failed `main` push) is idempotent and resumes like any other
+failed publish. Local development keeps the editable symlinked installs.
+
+#### One-time PyPI setup
+
+The PyPI upload authenticates with [trusted
+publishing](https://docs.pypi.org/trusted-publishers/) (GitHub OIDC); no API
+token secret is stored. Before the first release that publishes to PyPI, add a
+trusted publisher for the `cadgen` project on PyPI (use "Add a pending
+publisher" if the project does not exist yet): repository
+`earthtojake/text-to-cad`, workflow `release.yml`, environment left blank.
+
+### Publishing without a version bump
+
+`bump=none` publishes `base_branch` exactly as it stands: no version change, no
+release PR, straight to the publish jobs. Use it whenever the version is already
+right or is beside the point — resuming a failed publish, and rehearsing the
+pipeline against `build-test`. `set_version` is only for naming a specific *new*
+version; it is not the way to say "leave the version alone".
+
+`sync-version.mjs` still runs under `bump=none`, so a base branch whose derived
+metadata has drifted from `VERSION` is caught and goes through a release PR
+rather than publishing the drift.
+
 ### Testing CI/CD and build changes
 
 Use `target_branch=build-test` only when explicitly testing changes to the
 CI/CD pipeline or production build outputs; it is never part of a normal
 release and should never be chosen by default. It rehearses the full publish
-flow without touching `main`, deploying, or creating a tag/release. Use
-`dry_run=true` to preview the version changes only, and `auto_merge=false` to
-stop after preparing the release PR.
+flow without touching `main`, deploying, creating a tag/release, uploading to
+PyPI, or syncing the CAD Viewer mirror:
+
+```bash
+gh workflow run release.yml --ref <branch> \
+  -f bump=none -f base_branch=<branch> -f target_branch=build-test
+```
+
+Pair it with `bump=none` so a rehearsal does not consume a version number or
+move `VERSION` on the branch you are testing. Bump for real (`bump=patch`) only
+when the change under test is the version machinery itself — `bump-version.sh`
+or `sync-version.mjs` — since `bump=none` skips that stage. `dry_run=true`
+previews the version changes only, and `auto_merge=false` stops after preparing
+the release PR.
 
 ### Resuming a failed publish
 
 If a run fails partway — including after `main` has moved but before the semver
-tag exists — rerun `Release` with `set_version` pinned to the current version.
-When `develop` already contains that version, the workflow skips the release PR
-and proceeds straight to the publish jobs.
+tag exists — rerun `Release` with `bump=none`. The version already reached
+`base_branch` on the first attempt, so there is nothing to bump; the workflow
+skips the release PR and proceeds straight to the publish jobs, and the publish
+gate handles both shapes (`main` not yet moved, and `main` moved with the tag
+missing).
 
-### Redeploying the web apps
+### Redeploying the docs site
 
-The standalone `Deploy Docs` and `Deploy Viewer` workflows redeploy the
-individual web apps to Vercel production without running a release. They
-default to deploying `main` and expect a production-layout ref:
+The standalone `Deploy Docs` workflow redeploys the docs site to Vercel
+production without running a release. It defaults to deploying `main` and
+expects a production-layout ref:
 
 ```bash
 gh workflow run deploy-docs.yml -f ref=main
-gh workflow run deploy-viewer.yml -f ref=main
 ```
 
-### Uploading new models
+The CAD Viewer is a local-filesystem app and has no hosted deployment.
 
-The standalone `Upload Models` workflow uploads the `models/` catalog and CAD
-Viewer assets to Vercel Blob without running a release or redeploying the
-viewer. It skips assets that already match the remote catalog and fetches only
-the missing Git LFS objects. Upload from a source ref — `main` does not
-contain `models/`:
+### Mirroring the CAD Viewer repo
+
+`viewer/` is published as its own standalone repo,
+[`earthtojake/cad-viewer`](https://github.com/earthtojake/cad-viewer). The
+`Release` workflow calls `Sync CAD Viewer Repo` after publishing to `main`, so
+the mirror tracks releases rather than in-flight `develop` work. Dispatch it on
+its own for an out-of-band sync, or with `dry_run` to build and verify the
+mirror without pushing:
 
 ```bash
-gh workflow run upload-models.yml -f ref=develop
+gh workflow run sync-cad-viewer.yml -f ref=main
+gh workflow run sync-cad-viewer.yml -f ref=main -f dry_run=true
+```
+
+The workflow needs a `CAD_VIEWER_SYNC_TOKEN` secret with `contents:write` on the
+mirror repo. Before pushing, it runs `npm ci`, `npm run test`, `npm run build`,
+`pip install -r requirements.txt`, and the `server_py` tests inside the mirror,
+so a mirror that cannot stand on its own fails the release instead of shipping.
+
+The sync is a **straight copy** — nothing rewrites paths, commands, or prose on
+the way out, and it does not run or depend on `bundle.sh`. The only structural
+change is dereferencing `viewer/packages/*` into real directories; the script
+refuses to publish a tree that still contains a symlink. What lands in the
+mirror's `packages/` is whatever `viewer/packages/` holds, so syncing from a
+published `main` mirrors the committed bundle output that `bundle.sh --check`
+already validated. A sync from `develop` dereferences the symlinks to the live
+package sources instead — a development snapshot, not what a release publishes,
+and the script says so when it sees that layout. That works only because
+`viewer/` stays self-contained, which `viewer/scripts/selfContained.test.mjs`
+enforces on every test run: no import, markdown link, or `package.json` script
+under `viewer/` may reach above it. Repo-level tooling belongs in `scripts/`,
+not under `viewer/`.
+
+To sync into a local clone, or to check an existing one for drift:
+
+```bash
+scripts/viewer/sync-cad-viewer-repo.sh ../cad-viewer
+scripts/viewer/sync-cad-viewer-repo.sh --check ../cad-viewer
 ```
 
 ### Local and manual fallbacks
@@ -310,8 +383,8 @@ Production users should continue cloning `main`; developers should treat
    what inputs it expects, what it produces, and how to validate the work.
 3. Prefer small files in `references/` and reusable scripts in `scripts/` over
    long inline instructions.
-4. Add or update focused fixtures, tests, or benchmark cases when skill behavior
-   changes so regressions are measurable.
+4. Add or update focused fixtures or tests when skill behavior changes so
+   regressions are measurable.
 5. Validate with the smallest relevant check before broad repo checks.
 
 Generated artifacts should not become skill logic unless they are intentional
@@ -351,8 +424,11 @@ behavior:
 npm --prefix viewer run dev -- --host 127.0.0.1
 ```
 
-Use the printed URL with an absolute `?dir=/path/to/root` and any absolute
-`?file=/path/to/model.step`. Do not assume a fixed dev port unless you pass
+Put the absolute workspace directory in the URL path and the artifact in
+`?file=<path relative to it>` — pick the project's model root, not the file's own
+folder, so the file browser lists the whole project:
+`http://127.0.0.1:<port>/abs/project/models?file=mechanisms/lift_table.step.py`.
+Do not assume a fixed dev port unless you pass
 Vite's standard `--port` flag. Packaged Viewer runtime checks are
 production-output checks; use `scripts/README.md` when you specifically need
 that path.
@@ -364,6 +440,14 @@ as `.venv/`, `node_modules/`, `.vite/`, `dist/`, `tmp/`, or local credentials.
 Generated runtime changes should come from the production-output workflow, not
 manual edits inside generated runtime folders.
 
-CAD exchange files, generated render/topology assets, `assets/**`, and
-`benchmarks/**` may be LFS-tracked. Never disable LFS filters for `git add`,
-commits, or other object-writing operations.
+CAD exchange files, generated render/topology assets, and `assets/**` may be
+LFS-tracked. Never disable LFS filters for `git add`, commits, or other
+object-writing operations.
+
+`assets/**` holds heavyweight demo GIFs and is excluded from default LFS pulls,
+so lightweight clones do not fetch it. Hydrate it only when you need the demo
+assets locally:
+
+```bash
+git lfs pull --include="assets/**"
+```
