@@ -30,6 +30,7 @@ CADGEN_RUNTIME_DIR="$REPO_ROOT/skills/implicit-cad/scripts/packages/cadgen"
 BUILDERS_RUNTIME_DIR="$REPO_ROOT/skills/implicit-cad/scripts/packages/cadjs/bin"
 BUILDER_ENTRIES=(
   "$REPO_ROOT/packages/cadjs/bin/implicit-artifact.mjs"
+  "$REPO_ROOT/packages/cadjs/bin/implicit-export.mjs"
   "$REPO_ROOT/packages/cadjs/bin/implicitClosureHooks.mjs"
   "$REPO_ROOT/packages/implicitjs/src/lib/implicitCad/meshWorkerEntry.js"
 )
