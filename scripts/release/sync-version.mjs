@@ -31,7 +31,6 @@ const jsonTargets = [
 const tomlTargets = [
   "packages/cadgen/pyproject.toml",
   "viewer/moveit2_server/pyproject.toml",
-  "skills/cad/scripts/packages/cadgen/pyproject.toml",
 ];
 
 function usage() {

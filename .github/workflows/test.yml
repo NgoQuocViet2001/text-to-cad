@@ -70,3 +70,10 @@ jobs:
 
       - name: Run code tests
         run: scripts/test/test.sh
+
+      # Everything above runs against the source tree, where the repo root is importable
+      # and every asset is one directory away. This runs the CLIs the way a user gets
+      # them -- pip-installed, from a directory that is not this repo -- which is the only
+      # place a missing package-data glob or an accidental repo-relative path shows up.
+      - name: Run installed-mode checks
+        run: scripts/test/test-installed.sh
