@@ -198,6 +198,21 @@ def _interpreter_roots() -> tuple[Path, ...]:
     for prefix in (sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix):
         if prefix:
             roots.add(Path(prefix).resolve())
+    # ...plus any OTHER installed-package directory that actually reached sys.path. The
+    # prefixes above cover the interpreter's own layout, which is the normal case, but a
+    # site-packages can arrive by .pth line, PYTHONPATH, or a vendored bundle and then
+    # belongs to no prefix here. Misclassifying one as model code is not a cosmetic error:
+    # eviction re-imports it, and a C extension re-imported mid-process fails in ways that
+    # do not name the cause (numpy reports a missing dtype attribute).
+    for entry in sys.path:
+        if not entry:
+            continue
+        candidate = Path(entry)
+        if candidate.name in {"site-packages", "dist-packages"}:
+            try:
+                roots.add(candidate.resolve())
+            except OSError:
+                continue
     return tuple(roots)
 
 
