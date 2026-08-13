@@ -23,26 +23,14 @@ const jsonTargets = [
       ["packages", "packages/cadjs", "version"],
     ],
   },
-  { path: "skills/cad-viewer/scripts/viewer/package.json", fields: [["version"]] },
   { path: ".claude-plugin/plugin.json", fields: [["version"]] },
   { path: ".codex-plugin/plugin.json", fields: [["version"]] },
   { path: ".claude-plugin/marketplace.json", fields: [["version"]], pluginEntries: ["cad"] },
-  { path: "viewer/packages/cadjs/package.json", fields: [["version"]], required: false },
-  { path: "viewer/packages/cadjs/package-lock.json", fields: [["version"], ["packages", "", "version"]], required: false },
-  { path: "skills/cad-viewer/scripts/viewer/packages/cadjs/package.json", fields: [["version"]], required: false },
-  {
-    path: "skills/cad-viewer/scripts/viewer/packages/cadjs/package-lock.json",
-    fields: [["version"], ["packages", "", "version"]],
-    required: false,
-  },
 ];
 
 const tomlTargets = [
   "packages/cadgen/pyproject.toml",
   "viewer/moveit2_server/pyproject.toml",
-  "viewer/packages/cadgen/pyproject.toml",
-  "skills/cad-viewer/scripts/viewer/moveit2_server/pyproject.toml",
-  "skills/cad-viewer/scripts/viewer/packages/cadgen/pyproject.toml",
   "skills/cad/scripts/packages/cadgen/pyproject.toml",
 ];
 
