@@ -51,7 +51,8 @@ per-skill layout. Treat it as a parts bin:
 
 **Reuse (cherry-pick or re-derive during Phase A — all four are proven working there):**
 
-1. `tests/python/packages/cadgen/test_step_needs_no_node.py` — the STEP invariant test.
+1. `tests/python/packages/cadgen/test_step_needs_no_node.py` — the STEP tripwire test
+   (see invariant 1 for its demoted status: accidental-coupling guard, not a rule).
 2. The export-CLI-as-builder pieces: `packages/cadjs/bin/implicit-export.mjs` (thin
    wrapper `import "implicitjs/cli/export"`), the `"./cli/export"` entry in implicitjs's
    exports map, and `"./scripts/export.mjs"` added to implicitjs's `sideEffects` — the
@@ -76,10 +77,18 @@ destination, Phase C deletes the per-skill copies it committed.
 
 ## 1. Non-negotiable invariants (hold at the end of EVERY phase)
 
-1. **STEP never needs Node.** Pinned by
-   `tests/python/packages/cadgen/test_step_needs_no_node.py` — land it in Phase A
-   (§0.1 item 1; not on develop yet). Corollary: no import-time code may resolve the
-   node binary or touch runtime assets; resolution stays call-time.
+1. **Runtime resolution is call-time only.** No import-time code may resolve the node
+   binary or touch `_runtime` assets — `pip install cadgen` must work with no Node
+   present, and the long-lived viewer server must import light. Node ≥ 20 is otherwise a
+   first-class, documented runtime dependency of the distribution (user decision
+   2026-08-12): a *deliberate* design that routes more of the pipeline through Node is
+   allowed.
+
+   STEP happens to need no Node today. That is a preserved property, **not a design
+   constraint**: land `tests/python/packages/cadgen/test_step_needs_no_node.py`
+   (§0.1 item 1) as a tripwire against *accidental* coupling — one stray call in the
+   shared generation path would break STEP in Node-less environments silently — and
+   delete or amend the test in the same PR as any deliberate change, with a note.
 2. **Skill CLI contracts are frozen**: argv, stdout/stderr split, exit codes, env
    knobs (`CADGEN_WARM`, `CADGEN_STRICT_LOCKS`, `PYTHONHASHSEED` re-exec in dxf, …) for
    every entry under `skills/*/scripts/`. The suites under `tests/python/skills/**` are
@@ -103,10 +112,18 @@ destination, Phase C deletes the per-skill copies it committed.
 7. **`cadgen.viewer` server modules import without OCP** (the long-lived server never
    drags OCP/build123d/ezdxf in at import; today's `server_py/artifact.py` discipline).
    `test_coordination_is_stdlib_only.py` and the moved server tests pin it.
-8. **The mirror stays self-contained**: `viewer/` keeps passing
-   `viewer/scripts/selfContained.test.mjs` (no reference above its root), and
-   `scripts/viewer/sync-cad-viewer-repo.sh` keeps producing a tree that installs, tests,
-   builds, and serves on its own.
+8. **The mirror stays copy-clean, and its backend comes from PyPI.** With `server_py`
+   moved into cadgen, "self-contained" is redefined (user decision 2026-08-12): the
+   mirror no longer vendors the Python runtime — its `requirements.txt` pins
+   `cadgen==<VERSION>` (stamped by `sync-version.mjs` on develop, copied verbatim; the
+   pinned version is always on PyPI before the sync job runs, because the upload
+   precedes the publish push). It still vendors `cadjs`/`implicitjs` — those are
+   unpublished, so copying is the only way to build the client from source.
+   `viewer/scripts/selfContained.test.mjs` keeps passing (no reference above the app
+   root — that is about mirror-copy integrity and is unchanged), and the synced tree
+   must still `npm ci && npm test && npm run build` and serve, given
+   `pip install -r requirements.txt`. The trade: the mirror is no longer runnable
+   offline from a bare checkout — accepted; it is a published artifact, not a dev tree.
 
 ## 2. Target state
 
@@ -164,7 +181,8 @@ call-time, `NodeUnavailable` with actionable message) is unchanged.
 - Core deps unchanged: `build123d`, `cadquery-ocp`, `ezdxf`, `shapely`.
 - NEW extra `snapshot`: `playwright`. (Extras gate *dependencies*, not files — the JS
   ships to everyone; it's small.)
-- Node ≥ 20 is a documented **runtime** requirement for DXF/implicit builds only.
+- Node ≥ 20 is a documented **runtime** requirement of the distribution; today only the
+  DXF/implicit builds exercise it (invariant 1: resolved at call time, never import).
 - Snapshot additionally needs a browser: document `python -m playwright install chromium`
   in the SKILL.md Setup of snapshot-capable skills and in cadgen's README.
 
@@ -179,11 +197,12 @@ names**; `scripts/release/pin-cadgen-requirements.sh` pins them at publish:
 | cad-viewer | `cadgen` |
 | gcode, bambu-labs, sendcutsend, step-parts | untouched (no cadgen) |
 
-Update the pin script: match `^cadgen(\[[a-z0-9_,-]+\])?$` → `cadgen\1==$VERSION`
-(keep the existing `--editable …/packages/cadgen` rule for `viewer/requirements.txt`,
-which the mirror uses and the publish tree drops anyway). In the dev repo, the editable
-install from `requirements-dev.txt` already satisfies `cadgen[snapshot]`, so
-`pip install -r skills/cad/requirements.txt` is a no-op locally — that's the point.
+Update the pin script: match `^cadgen(\[[a-z0-9_,-]+\])?$` → `cadgen\1==$VERSION`.
+`viewer/requirements.txt` is handled differently (invariant 8): it carries a literal
+`cadgen==<VERSION>` pin **on develop**, stamped by `sync-version.mjs`, because the
+mirror sync is a straight copy with no rewrite step. In the dev repo, the editable
+install from `requirements-dev.txt` (version == `VERSION`) satisfies both forms, so
+`pip install -r …/requirements.txt` is a no-op locally — that's the point.
 
 ### 2.4 What is committed where
 
@@ -213,7 +232,7 @@ install from `requirements-dev.txt` already satisfies `cadgen[snapshot]`, so
 
 ```bash
 pip install "cadgen[snapshot]"        # python -m playwright install chromium for snapshots
-cadgen step gen model.step.py         # STEP: no Node required, ever
+cadgen step gen model.step.py         # STEP: currently needs no Node
 cadgen dxf gen drawing.dxf.py         # needs node>=20 on PATH (or CADGEN_NODE)
 cadgen implicit export model.implicit.js --stl
 cadgen snapshot model.step.py --out shot.png
@@ -263,11 +282,14 @@ modules listed in §2.1. Then:
   and `PYTHONPATH` → `packages/cadgen/src`). The cross-process lock/SIGKILL test and the
   no-OCP-at-import property must survive the move.
 - `viewer/scripts/start-viewer.mjs` (dev + mirror launcher): spawn
-  `python -m cadgen.viewer --dist "$appRoot/dist" …` instead of `-m server_py.start_viewer`;
-  `cad-python.mjs` already puts `packages/cadgen/src` on `PYTHONPATH` via find-up, which
-  resolves in the dev repo AND in the mirror (it vendors `packages/cadgen` inside its
-  root — no upward reference, selfContained test stays green). `viewer/package.json`
-  `"serve"` → `python3 -m cadgen.viewer.server`.
+  `python -m cadgen.viewer --dist "$appRoot/dist" …` instead of `-m server_py.start_viewer`.
+  The backend comes from the interpreter's installed cadgen: in the dev repo the
+  editable install (via `requirements-dev.txt` / `cad-python.mjs`'s find-up of
+  `packages/cadgen/src`), in the mirror the PyPI pin from its `requirements.txt`
+  (invariant 8). The existing startup probe (cadgen/OCP importable, actionable error
+  text) is the missing-install failure mode. Delete the `viewer/packages/cadgen`
+  symlink — nothing consumes it once the runtime copy and mirror vendoring are gone.
+  `viewer/package.json` `"serve"` → `python3 -m cadgen.viewer.server`.
 
 ### 3.3 Skill CLI shims
 
@@ -323,7 +345,8 @@ editable packages. This plan file (Phase D).
 ### 3.5 Not moving
 
 `packages/cadjs`, `packages/implicitjs` (JS sources; still symlinked into `viewer/packages/`
-for vite dev/build and mirrored into the cad-viewer repo). `viewer/src` + vite config +
+for vite dev/build and mirrored into the cad-viewer repo — they are unpublished, so the
+mirror keeps vendoring them; `viewer/packages/cadgen` goes away, see §3.2). `viewer/src` + vite config +
 e2e scripts. `viewer/moveit2_server` stays the source of truth in `viewer/` (mirror needs
 it); the wheel carries a copy under `_runtime/moveit2` and `cadgen moveit2
 setup|check|serve` passes through to its shell scripts with
@@ -372,15 +395,21 @@ after a full bundle).
 Steps in §3.2, plus: rewrite `skills/cad-viewer/SKILL.md` (launch = `cadgen viewer …`,
 same URL/JSON contract), delete the `scripts/viewer` symlink + `bundle-cad-viewer.sh`
 (its vite-build stage already moved to the Phase A bundler; the viewer-packages
-materialization dies with it), update `sync-version.mjs`, drop the
-`skills/cad-viewer/scripts/viewer` path from every outputs list. Update
-`viewer/docs/backend.md` paths.
+materialization dies with it), drop the `skills/cad-viewer/scripts/viewer` path from
+every outputs list. Mirror redefinition (invariant 8): set `viewer/requirements.txt` to
+`cadgen==<VERSION>` and add it to `sync-version.mjs`'s stamp list; delete the
+`viewer/packages/cadgen` symlink; update the mirror-facing README/quickstart in
+`viewer/` — the no-clone path is `pip install cadgen && cadgen viewer`, the
+build-from-source path is `npm ci && npm run build && pip install -r requirements.txt
+&& npm run start`. Update `viewer/docs/backend.md` paths.
 
 Gates: full suite; viewer JS tests + `selfContained.test.mjs`; e2e: `npm --prefix viewer
 run dev` sweep (`scripts/e2e-format-sweep.mjs`) AND prod path `bundle … --viewer` then
 `python -m cadgen.viewer --port <n>` → open a fixture, curl `/__cad/catalog`; mirror
 rehearsal: `scripts/viewer/sync-cad-viewer-repo.sh` into a scratch clone → `npm ci &&
-npm test && npm run build && pip install -e packages/cadgen && npm run start` → curl.
+npm test && npm run build`, then install the repo's cadgen into the test venv
+explicitly (`pip install -e <repo>/packages/cadgen` or the locally built wheel — the
+pinned version is not on PyPI until release) → `npm run start` → curl.
 The packaged-runtime `npm run start` bug (missing `scripts/`) disappears with the
 runtime — note it as fixed-by-deletion.
 
@@ -425,9 +454,10 @@ artifact formats and digests are unchanged (invariant 6).
   `check-wheel-contents.sh` (with `CADGEN_REQUIRE_VIEWER_DIST=1`) right before the
   upload. `PUBLISH_TREE_REMOVED_ROOTS` unchanged.
 - `pin-cadgen-requirements.sh`: add the bare-`cadgen[extra]` pin rule (§2.3).
-- `sync-version.mjs`: drop entries for deleted copies; nothing new to stamp
-  (`_runtime` carries no versions; the viewer dist inherits its stamp from
-  `viewer/package.json` at build).
+- `sync-version.mjs`: drop entries for deleted copies; add one — the
+  `cadgen==<VERSION>` pin in `viewer/requirements.txt` (invariant 8). `_runtime`
+  carries no versions; the viewer dist inherits its stamp from `viewer/package.json`
+  at build.
 - `check-builds.sh`: outputs shrink; keep the symlink sweep.
 
 ## 6. Footguns (read before touching anything)
