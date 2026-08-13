@@ -1,7 +1,7 @@
 """Assert the Python encoders match Node byte-for-byte via golden.json.
 
 golden.json is produced by gen_golden.mjs from the real JS semantics. If it is
-missing, regenerate it with: ``node viewer/server_py/tests/gen_golden.mjs``.
+missing, regenerate it with: ``node tests/python/packages/cadgen/viewer/gen_golden.mjs``.
 """
 
 import json
@@ -11,7 +11,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from server_py import encoding, natural_sort, urls  # noqa: E402
+from cadgen.viewer import encoding, natural_sort, urls  # noqa: E402
 
 _GOLDEN_PATH = pathlib.Path(__file__).resolve().parent / "golden.json"
 
@@ -19,7 +19,7 @@ _GOLDEN_PATH = pathlib.Path(__file__).resolve().parent / "golden.json"
 def load_golden():
     if not _GOLDEN_PATH.exists():
         raise unittest.SkipTest(
-            "golden.json missing — run: node viewer/server_py/tests/gen_golden.mjs"
+            "golden.json missing — run: node tests/python/packages/cadgen/viewer/gen_golden.mjs"
         )
     return json.loads(_GOLDEN_PATH.read_text())
 

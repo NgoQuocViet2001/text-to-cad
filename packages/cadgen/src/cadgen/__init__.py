@@ -1,6 +1,7 @@
 """Shared CAD artifact generation runtime."""
 
 __all__ = [
+    "__version__",
     "AssemblyHelper",
     "srgb",
     "MateRelation",
@@ -47,4 +48,32 @@ def __getattr__(name: str):
         from cadgen.progress import report, track
 
         return {"report": report, "track": track}[name]
+    if name == "__version__":
+        return _resolve_version()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _resolve_version() -> str:
+    """The installed distribution version, falling back to pyproject in a source tree.
+
+    Installed metadata is the authority: it is what a consumer actually has, and it is
+    what the skill shims compare their pinned requirement against. A bare source checkout
+    has no metadata, so fall back to the pyproject this file ships beside — release
+    tooling stamps it from the canonical VERSION, so the two never disagree.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("cadgen")
+    except PackageNotFoundError:
+        pass
+
+    import pathlib
+    import tomllib
+
+    pyproject = pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml"
+    try:
+        with pyproject.open("rb") as handle:
+            return str(tomllib.load(handle)["project"]["version"])
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        return "0+unknown"
