@@ -27,9 +27,12 @@ installable distribution containing the whole CAD runtime:
 Consumers, all first-class:
 
 1. **This repo's skills** — become thin CLI shims + docs; no vendored code.
-2. **The standalone `earthtojake/cad-viewer` mirror** — keeps working, self-contained.
-3. **Anyone running `pip install cadgen`** — gets the Python API, the CLIs, and
-   `cadgen viewer`.
+2. **Anyone running `pip install cadgen`** — the Python API, the CLIs, and
+   `cadgen viewer`. This is also the viewer's ONLY distribution channel: the
+   `earthtojake/cad-viewer` mirror repo and its sync machinery are **retired** (user
+   decision 2026-08-12 — the mirror was added days earlier and predates the
+   mega-package; with the wheel carrying the built SPA and the backend, a second synced
+   channel is pure upkeep).
 
 Explicit user decisions already made (do not relitigate):
 
@@ -43,6 +46,8 @@ Explicit user decisions already made (do not relitigate):
   snapshot is a separate follow-up the user asked to defer.
 - `cadjs` and `implicitjs` stay unpublished repo-internal JS source packages (build
   inputs). Nothing installs them; their built outputs ship inside the cadgen wheel.
+- The `earthtojake/cad-viewer` mirror repo + sync are retired (2026-08-12). Added in
+  0.4.6, superseded by wheel distribution; archiving the GitHub repo is a user step.
 
 ### 0.1 Prior art: PR #224 (`claude/cadgen-self-contained`) — reuse judgment
 
@@ -112,18 +117,13 @@ destination, Phase C deletes the per-skill copies it committed.
 7. **`cadgen.viewer` server modules import without OCP** (the long-lived server never
    drags OCP/build123d/ezdxf in at import; today's `server_py/artifact.py` discipline).
    `test_coordination_is_stdlib_only.py` and the moved server tests pin it.
-8. **The mirror stays copy-clean, and its backend comes from PyPI.** With `server_py`
-   moved into cadgen, "self-contained" is redefined (user decision 2026-08-12): the
-   mirror no longer vendors the Python runtime — its `requirements.txt` pins
-   `cadgen==<VERSION>` (stamped by `sync-version.mjs` on develop, copied verbatim; the
-   pinned version is always on PyPI before the sync job runs, because the upload
-   precedes the publish push). It still vendors `cadjs`/`implicitjs` — those are
-   unpublished, so copying is the only way to build the client from source.
-   `viewer/scripts/selfContained.test.mjs` keeps passing (no reference above the app
-   root — that is about mirror-copy integrity and is unchanged), and the synced tree
-   must still `npm ci && npm test && npm run build` and serve, given
-   `pip install -r requirements.txt`. The trade: the mirror is no longer runnable
-   offline from a bare checkout — accepted; it is a published artifact, not a dev tree.
+8. **The wheel is the viewer's only distribution channel.** The
+   `earthtojake/cad-viewer` mirror and its sync machinery are retired in Phase B — no
+   second copy of the viewer exists to drift or to keep self-contained. `viewer/`
+   becomes an ordinary internal app directory of this repo: the self-containment fence
+   (`viewer/scripts/selfContained.test.mjs`) and its AGENTS.md rule existed solely for
+   verbatim mirroring and are deleted with it. (The viewer's *runtime* contract is
+   invariant 3; this one is about distribution.)
 
 ## 2. Target state
 
@@ -198,11 +198,11 @@ names**; `scripts/release/pin-cadgen-requirements.sh` pins them at publish:
 | gcode, bambu-labs, sendcutsend, step-parts | untouched (no cadgen) |
 
 Update the pin script: match `^cadgen(\[[a-z0-9_,-]+\])?$` → `cadgen\1==$VERSION`.
-`viewer/requirements.txt` is handled differently (invariant 8): it carries a literal
-`cadgen==<VERSION>` pin **on develop**, stamped by `sync-version.mjs`, because the
-mirror sync is a straight copy with no rewrite step. In the dev repo, the editable
-install from `requirements-dev.txt` (version == `VERSION`) satisfies both forms, so
-`pip install -r …/requirements.txt` is a no-op locally — that's the point.
+`viewer/requirements.txt` is deleted in Phase B — it existed for the packaged skill
+runtime and the retired mirror; the dev backend comes from `requirements-dev.txt`'s
+editable install (version == `VERSION`), which also satisfies the skills' unpinned
+lines, so `pip install -r skills/*/requirements.txt` is a no-op locally — that's the
+point.
 
 ### 2.4 What is committed where
 
@@ -281,15 +281,14 @@ modules listed in §2.1. Then:
   `scripts/test/test-python.sh` (the "CAD Viewer backend Python tests" block: start dir
   and `PYTHONPATH` → `packages/cadgen/src`). The cross-process lock/SIGKILL test and the
   no-OCP-at-import property must survive the move.
-- `viewer/scripts/start-viewer.mjs` (dev + mirror launcher): spawn
+- `viewer/scripts/start-viewer.mjs` (the in-repo prod-path launcher): spawn
   `python -m cadgen.viewer --dist "$appRoot/dist" …` instead of `-m server_py.start_viewer`.
-  The backend comes from the interpreter's installed cadgen: in the dev repo the
-  editable install (via `requirements-dev.txt` / `cad-python.mjs`'s find-up of
-  `packages/cadgen/src`), in the mirror the PyPI pin from its `requirements.txt`
-  (invariant 8). The existing startup probe (cadgen/OCP importable, actionable error
-  text) is the missing-install failure mode. Delete the `viewer/packages/cadgen`
-  symlink — nothing consumes it once the runtime copy and mirror vendoring are gone.
-  `viewer/package.json` `"serve"` → `python3 -m cadgen.viewer.server`.
+  The backend comes from the interpreter's installed cadgen (dev: the editable install
+  via `requirements-dev.txt` / `cad-python.mjs`'s find-up of `packages/cadgen/src`);
+  the existing startup probe (cadgen/OCP importable, actionable error text) is the
+  missing-install failure mode. Delete the `viewer/packages/cadgen` symlink and
+  `viewer/requirements.txt` — nothing consumes them once the runtime copy and the
+  mirror are gone. `viewer/package.json` `"serve"` → `python3 -m cadgen.viewer.server`.
 
 ### 3.3 Skill CLI shims
 
@@ -335,7 +334,11 @@ packaged browser runtime resolves (§2.2).
 ### 3.4 Deletions (Phase C unless noted)
 
 Vendored trees `skills/*/scripts/packages/**`; `skills/*/scripts/snapshot/runtime/`;
-`skills/cad-viewer/scripts/viewer` symlink + its bundler (Phase B); `vendor.sh`,
+`skills/cad-viewer/scripts/viewer` symlink + its bundler (Phase B); the mirror
+machinery — `scripts/viewer/sync-cad-viewer-repo.sh`,
+`.github/workflows/sync-cad-viewer.yml`, the `sync-cad-viewer` release.yml job,
+`viewer/scripts/selfContained.test.mjs`, `viewer/requirements.txt`, the
+`viewer/packages/cadgen` symlink (all Phase B); `vendor.sh`,
 `snapshot_runtime.sh`, per-skill bundle scripts; per-skill symlink setup scripts;
 `sync-version.mjs` entries for deleted paths (viewer/packages/*, skill copies);
 `check-builds.sh` keeps its no-symlink sweep over `skills/` but its outputs list shrinks
@@ -345,9 +348,8 @@ editable packages. This plan file (Phase D).
 ### 3.5 Not moving
 
 `packages/cadjs`, `packages/implicitjs` (JS sources; still symlinked into `viewer/packages/`
-for vite dev/build and mirrored into the cad-viewer repo — they are unpublished, so the
-mirror keeps vendoring them; `viewer/packages/cadgen` goes away, see §3.2). `viewer/src` + vite config +
-e2e scripts. `viewer/moveit2_server` stays the source of truth in `viewer/` (mirror needs
+for vite dev/build; `viewer/packages/cadgen` goes away, see §3.2). `viewer/src` + vite config +
+e2e scripts. `viewer/moveit2_server` stays the source of truth in `viewer/` (nothing needs
 it); the wheel carries a copy under `_runtime/moveit2` and `cadgen moveit2
 setup|check|serve` passes through to its shell scripts with
 `MOVEIT2_SERVER_REPO_ROOT` defaulting to cwd — best-effort parity with today's packaged
@@ -396,20 +398,24 @@ Steps in §3.2, plus: rewrite `skills/cad-viewer/SKILL.md` (launch = `cadgen vie
 same URL/JSON contract), delete the `scripts/viewer` symlink + `bundle-cad-viewer.sh`
 (its vite-build stage already moved to the Phase A bundler; the viewer-packages
 materialization dies with it), drop the `skills/cad-viewer/scripts/viewer` path from
-every outputs list. Mirror redefinition (invariant 8): set `viewer/requirements.txt` to
-`cadgen==<VERSION>` and add it to `sync-version.mjs`'s stamp list; delete the
-`viewer/packages/cadgen` symlink; update the mirror-facing README/quickstart in
-`viewer/` — the no-clone path is `pip install cadgen && cadgen viewer`, the
-build-from-source path is `npm ci && npm run build && pip install -r requirements.txt
-&& npm run start`. Update `viewer/docs/backend.md` paths.
+every outputs list. Mirror retirement (invariant 8): delete
+`scripts/viewer/sync-cad-viewer-repo.sh`, `.github/workflows/sync-cad-viewer.yml`, and
+the `sync-cad-viewer` job in `release.yml` (remove it from `tag-release.needs`); delete
+`viewer/scripts/selfContained.test.mjs` and the viewer-self-containment rule/sections
+in AGENTS.md and CONTRIBUTING; delete `viewer/requirements.txt` and the
+`viewer/packages/cadgen` symlink. Rewrite `viewer/README.md`: install =
+`pip install cadgen && cadgen viewer`; in-repo loops stay `npm --prefix viewer run dev`
+(HMR) and `npm --prefix viewer run start` (prod path against a local build).
+**USER STEPS** (flag, don't do unprompted): archive the `earthtojake/cad-viewer` GitHub
+repo — or push a final pointer README — and delete the now-unused
+`CAD_VIEWER_SYNC_TOKEN` secret. Update `viewer/docs/backend.md` paths.
 
-Gates: full suite; viewer JS tests + `selfContained.test.mjs`; e2e: `npm --prefix viewer
-run dev` sweep (`scripts/e2e-format-sweep.mjs`) AND prod path `bundle … --viewer` then
-`python -m cadgen.viewer --port <n>` → open a fixture, curl `/__cad/catalog`; mirror
-rehearsal: `scripts/viewer/sync-cad-viewer-repo.sh` into a scratch clone → `npm ci &&
-npm test && npm run build`, then install the repo's cadgen into the test venv
-explicitly (`pip install -e <repo>/packages/cadgen` or the locally built wheel — the
-pinned version is not on PyPI until release) → `npm run start` → curl.
+Gates: full suite; viewer JS tests; e2e: `npm --prefix viewer run dev` sweep
+(`scripts/e2e-format-sweep.mjs`) AND prod path `bundle … --viewer` then
+`python -m cadgen.viewer --port <n>` → open a fixture, curl `/__cad/catalog`;
+installed-wheel viewer smoke: after a full bundle, build the wheel, install it into a
+scratch venv (`--system-site-packages` over the repo venv), and from an empty directory
+run `cadgen viewer --port <n>` → curl the catalog and the page.
 The packaged-runtime `npm run start` bug (missing `scripts/`) disappears with the
 runtime — note it as fixed-by-deletion.
 
@@ -454,10 +460,11 @@ artifact formats and digests are unchanged (invariant 6).
   `check-wheel-contents.sh` (with `CADGEN_REQUIRE_VIEWER_DIST=1`) right before the
   upload. `PUBLISH_TREE_REMOVED_ROOTS` unchanged.
 - `pin-cadgen-requirements.sh`: add the bare-`cadgen[extra]` pin rule (§2.3).
-- `sync-version.mjs`: drop entries for deleted copies; add one — the
-  `cadgen==<VERSION>` pin in `viewer/requirements.txt` (invariant 8). `_runtime`
-  carries no versions; the viewer dist inherits its stamp from `viewer/package.json`
-  at build.
+- `sync-version.mjs`: drop entries for deleted copies; nothing new to stamp
+  (`_runtime` carries no versions; the viewer dist inherits its stamp from
+  `viewer/package.json` at build).
+- `release.yml`: delete the `sync-cad-viewer` job and its edge in `tag-release.needs`
+  (Phase B). Deploy Docs is untouched.
 - `check-builds.sh`: outputs shrink; keep the symlink sweep.
 
 ## 6. Footguns (read before touching anything)
