@@ -153,13 +153,18 @@ cadgen/                          # packages/cadgen/src/cadgen (unchanged home)
     moveit2/                     # copy of viewer/moveit2_server (best-effort; §3.5)
 ```
 
-Console scripts (pyproject `[project.scripts]`): keep `cadgen-step-artifact`; add
-`cadgen = cadgen.cli:main` with subcommands `step|dxf|implicit|snapshot|inspect|export|
-viewer|daemon|moveit2`. All existing `python -m cadgen.<module>` entries keep working.
+Console scripts (pyproject `[project.scripts]`, today only `cadgen-step-artifact`):
+keep it; add `cadgen = cadgen.cli:main` with nested subcommands mirroring the skill
+CLIs — `step {gen,artifact,export,inspect}`, `dxf {gen,artifact}`,
+`implicit {gen,export}`, `snapshot` (generic, all kinds), `viewer`, `daemon`,
+`moveit2`. All existing `python -m cadgen.<module>` entries keep working.
 `python -m cadgen.viewer` == the launcher (today's `server_py.start_viewer` behavior).
 
-Wheel size will land ≈8–10 MB (JS bundles + viewer dist incl. sourcemaps). Keep the
-sourcemaps: installed-runtime debuggability is an existing deliberate decision.
+Wheel size, measured: `viewer/dist` is **~16 MB, 12 MB of which is sourcemaps**; the
+Node + browser bundles add ~2–3 MB, so the wheel lands ≈18–20 MB with maps, ~7 MB
+without. PyPI's per-file cap is 100 MB — not a concern. Default: keep the maps
+(installed-runtime debuggability is an existing deliberate decision); stripping them
+from the wheel only is an acceptable follow-up if weight ever matters.
 
 ### 2.2 Asset resolution — `cadgen/assets.py`
 
@@ -300,7 +305,7 @@ Move each parser module into `cadgen/cli/` **verbatim** (parser definitions unch
 | `skills/cad/scripts/{artifact,export,inspect,snapshot}` | `cadgen/cli/step_{artifact,export,inspect,snapshot}.py` (inspect includes `inspect_refs`) |
 | `skills/dxf/scripts/{gen,artifact,snapshot}` | `cadgen/cli/dxf_*.py` |
 | `skills/implicit-cad/scripts/{gen,snapshot}` | `cadgen/cli/implicit_*.py` |
-| `skills/{urdf,srdf,sdf}/scripts/*` **that import cadgen** (discover: `git grep -l "import cadgen\|from cadgen" skills/*/scripts`) | `cadgen/cli/…` |
+| `skills/{urdf,srdf,sdf}/scripts/snapshot` — **verified the only cadgen importers in those skills** (discover with `git grep -l 'from cadgen\|import cadgen' skills \| grep -v '/packages/'` — note: a `skills/*/scripts` pathspec silently returns nothing) | snapshot shims only. Their `urdf`/`srdf`/`sdf` generators and `validate` commands are skill-local Python with **no cadgen dependency and stay in the skill** — the thin-shim rule applies to cadgen-backed commands, not to all skill code |
 | `skills/implicit-cad/scripts/export.mjs` (Node shim; today spawns the vendored implicitjs CLI) | becomes a passthrough onto `python -m cadgen.cli.implicit_export_js`, a ~10-line module that execs node on the packaged `implicit-export.mjs` with argv untouched — argv/stdio/exit codes preserved exactly |
 | `skills/cad/scripts/cadgen_daemon/` | `cadgen/daemon/` (env contract `CADGEN_WARM`/`CADGEN_DAEMON_CHILD` unchanged; staleness keying moves from watched source trees to `cadgen.__version__` + shim-dir mtimes — preserve restart semantics) |
 
@@ -357,9 +362,21 @@ setup|check|serve` passes through to its shell scripts with
 
 ## 4. Phases
 
-Each phase: own branch off the previous, own PR to `develop`, gates green before the
-next starts. Run `scripts/dev/setup-symlinks.sh` after any bundle script run — bundling
+Each phase: own branch, own PR to `develop`, gates green before the next starts.
+B and C both depend on A but **not on each other** — either order (A→B→C or A→C→B) is
+fine. Run `scripts/dev/setup-symlinks.sh` after any bundle script run — bundling
 materializes dev symlinks (known footgun).
+
+**Global policy tests encode the OLD doctrine and must be updated deliberately, in the
+phase that breaks them, never weakened silently** (all under `tests/python/global/`):
+`test_skill_self_containment.py` (rewrite in Phase C to the new rule: no cross-skill or
+repo-module imports; cadgen comes from the pinned distribution),
+`test_node_builder_bundles.py` (pins per-skill builder bundles AND `node_package_root()`
+behavior — replace across Phases A/C with a resolution-order unit test + the
+wheel-contents check), `test_pin_cadgen_requirements.py` (update with the Phase C regex
+change), `test_release_version_paths.py` (touched wherever `sync-version.mjs` entries
+change). `test_cli_stream_contract.py` spawns `skills/cad/scripts/gen` and must keep
+passing **unmodified** — it is the shim-compatibility gate, not an obstacle.
 
 ### Phase A — consolidate the JS runtime into the wheel
 
@@ -379,7 +396,11 @@ materializes dev symlinks (known footgun).
 2. `.gitignore`: `packages/cadgen/src/cadgen/_runtime/viewer/`.
 3. `cadgen/assets.py` with the §2.2 resolution; rewrite `node_builder_script()` and
    `run_snapshot_cli`'s runtime default to use it (keep legacy walk as the dev-source
-   step). `pyproject.toml`: package-data `cadgen = ["py.typed", "_runtime/**"]`.
+   step). `pyproject.toml`: package-data `cadgen = ["py.typed", "_runtime/**"]` —
+   **verify with the wheel-contents check**: `**` handling in setuptools package-data
+   has version quirks; if nested files (e.g. `_runtime/viewer/assets/*`) are missing
+   from the wheel, fall back to `include-package-data = true` + a `MANIFEST.in` with
+   `graft src/cadgen/_runtime`, or enumerate per-directory globs.
 4. Add `_runtime` to `vendor.sh` excludes (transitional: vendored skill copies must not
    duplicate it; the per-skill builder/runtime copies still exist until Phase C).
 5. Licensing: `--legal-comments=eof` + `THIRD_PARTY_LICENSES.txt` in `_runtime/node`.
@@ -402,8 +423,12 @@ every outputs list. Mirror retirement (invariant 8): delete
 `scripts/viewer/sync-cad-viewer-repo.sh`, `.github/workflows/sync-cad-viewer.yml`, and
 the `sync-cad-viewer` job in `release.yml` (remove it from `tag-release.needs`); delete
 `viewer/scripts/selfContained.test.mjs` and the viewer-self-containment rule/sections
-in AGENTS.md and CONTRIBUTING; delete `viewer/requirements.txt` and the
-`viewer/packages/cadgen` symlink. Rewrite `viewer/README.md`: install =
+in AGENTS.md and CONTRIBUTING — including AGENTS' release-flow paragraph naming the
+Sync workflow and CONTRIBUTING's "Mirroring the CAD Viewer repo" section; delete
+`viewer/requirements.txt` and the `viewer/packages/cadgen` symlink. Do **not** delete
+`scripts/dev/skills/setup-cad-viewer-skill-symlink.sh` wholesale: it also manages
+`viewer/packages/{cadjs,implicitjs}`, which survive as vite build inputs — it just
+loses the `viewer/packages/cadgen` and `skills/cad-viewer/scripts/viewer` links. Rewrite `viewer/README.md`: install =
 `pip install cadgen && cadgen viewer`; in-repo loops stay `npm --prefix viewer run dev`
 (HMR) and `npm --prefix viewer run start` (prod path against a local build).
 **USER STEPS** (flag, don't do unprompted): archive the `earthtojake/cad-viewer` GitHub
@@ -455,7 +480,8 @@ artifact formats and digests are unchanged (invariant 6).
 ## 5. CI / release deltas (summary)
 
 - `test.yml`: unchanged triggers; after its bundle step add wheel-contents +
-  installed-mode smoke (Phase A/C).
+  installed-mode smoke (Phase A/C). Wheel steps need `python -m pip install build`
+  first (the CI env does not carry it).
 - `release.yml`: cadgen build/upload already precedes trim (#223) — add
   `check-wheel-contents.sh` (with `CADGEN_REQUIRE_VIEWER_DIST=1`) right before the
   upload. `PUBLISH_TREE_REMOVED_ROOTS` unchanged.
