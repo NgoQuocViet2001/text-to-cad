@@ -136,6 +136,7 @@ import {
   buildFaceFillGeometryFromDisplayMeshes,
   buildFaceFillGeometryFromProxy,
   buildVertexMarkerMesh,
+  referenceExplodedViewMatrix,
   REFERENCE_CORNER_COLOR,
   REFERENCE_HIGHLIGHT_WIDTH_MULTIPLIER,
   REFERENCE_SELECTED_COLOR
@@ -1865,6 +1866,19 @@ const CadViewer = forwardRef(function CadViewer({
   const [activeViewPlaneFace, setActiveViewPlaneFace] = useState("");
   const [viewPlaneOrientation, setViewPlaneOrientation] = useState(DEFAULT_VIEW_PLANE_ORIENTATION);
   const [cameraZoomPercent, setCameraZoomPercent] = useState(100);
+  // Bumped whenever the exploded view reaches a POSE it will hold: the end of the
+  // explode/collapse animation, a slider scrub, or a collapse back to rest. Overlays that bake
+  // a record's matrix at build time -- the reference highlight's edge lines and its face fill --
+  // re-read it here. Without it the highlight keeps the pose it was built against and only
+  // corrects itself when the pointer next moves, which reads as the highlight being wrong.
+  const [explodedViewPoseTick, setExplodedViewPoseTick] = useState(0);
+  // Bumped every time the scene is rebuilt and `runtime.displayRecords` becomes a fresh set of
+  // objects. State baked ONTO records rather than into React -- the exploded view's per-record
+  // matrix -- is lost by that rebuild and has to be re-applied. The scene rebuilds for reasons
+  // the exploded view knows nothing about (a topology load, an edge setting, part pickability),
+  // so this is a signal rather than a longer dependency list: the last attempt at a dependency
+  // list is why isolating a part while exploded collapsed the model.
+  const [displayRecordsToken, setDisplayRecordsToken] = useState(0);
   const activeViewPlaneFaceRef = useRef("");
   const defaultPerspectiveResettingRef = useRef(false);
   const previewModeRef = useRef(previewMode);
@@ -3870,6 +3884,7 @@ const CadViewer = forwardRef(function CadViewer({
     edgesGroup.add(cadScene.edgesGroup);
     runtime.cadScene = cadScene;
     runtime.displayRecords = cadScene.displayRecords;
+    setDisplayRecordsToken((token) => token + 1);
     runtime.hasVisibleModel = true;
     runtime.activeModelKey = modelKey || "";
     const initialEdgeRuntimes = resolveTopologyDisplayEdgeRuntimes({
@@ -4458,6 +4473,7 @@ const CadViewer = forwardRef(function CadViewer({
         applyDisplayRecordTransform(THREE, record);
       }
       syncRecordTopologyDisplayEdgeTransforms(runtime, runtime.displayRecords);
+      setExplodedViewPoseTick((tick) => tick + 1);
       runtime.requestRender?.();
       animation.progress = 0;
       animation.layout = null;
@@ -4476,6 +4492,7 @@ const CadViewer = forwardRef(function CadViewer({
         applyDisplayRecordTransform(THREE, record);
       }
       syncRecordTopologyDisplayEdgeTransforms(runtime, runtime.displayRecords);
+      setExplodedViewPoseTick((tick) => tick + 1);
       runtime.requestRender?.();
       animation.progress = 0;
       return undefined;
@@ -4490,6 +4507,7 @@ const CadViewer = forwardRef(function CadViewer({
     if (!shouldAnimate) {
       animation.progress = targetProgress;
       applyExplodedViewRuntimeProgress(runtime, layout, targetProgress);
+      setExplodedViewPoseTick((tick) => tick + 1);
       return undefined;
     }
 
@@ -4514,6 +4532,7 @@ const CadViewer = forwardRef(function CadViewer({
       } else {
         animation.rafId = 0;
         animation.progress = targetProgress;
+        setExplodedViewPoseTick((tick) => tick + 1);
       }
     };
 
@@ -4530,6 +4549,7 @@ const CadViewer = forwardRef(function CadViewer({
     meshGeometrySource,
     modelKey,
     focusedPartIds.length,
+    displayRecordsToken,
     normalizedSceneScaleMode,
     normalizedThemeSettings,
     viewerReadyTick
@@ -4963,6 +4983,16 @@ const CadViewer = forwardRef(function CadViewer({
           depthBias: topologyLineDepthBiasForWidth(lineWidth, { visibilityClass: referenceVisibilityClass })
         });
         if (line) {
+          // The pick proxy these positions come from is world-at-rest; the exploded view moves
+          // the MESH and leaves the proxy alone, so without this the highlight for an exploded
+          // part draws where the part sits when collapsed. The face fill below needs no such
+          // matrix -- it is rebuilt from the live meshes, which already carry the offset.
+          const explodeMatrix = referenceExplodedViewMatrix(runtime, topologyReference);
+          if (explodeMatrix) {
+            line.matrixAutoUpdate = false;
+            line.matrix.copy(explodeMatrix);
+            line.matrixWorldNeedsUpdate = true;
+          }
           highlightGroup.add(line);
         }
       }
@@ -4999,7 +5029,7 @@ const CadViewer = forwardRef(function CadViewer({
       clearOverlayGroup(runtime, highlightGroup);
       clearOverlayGroup(runtime, faceFillGroup);
     };
-  }, [activeSelectorRuntime, hoveredReferenceId, pickableReferenceMap, selectedReferenceIds, viewerReadyTick, viewerTheme, displayEdgeSettings, measureModeActive]);
+  }, [activeSelectorRuntime, explodedViewPoseTick, hoveredReferenceId, pickableReferenceMap, selectedReferenceIds, viewerReadyTick, viewerTheme, displayEdgeSettings, measureModeActive]);
 
   useViewerDrawingOverlay({
     drawingCanvasRef,
