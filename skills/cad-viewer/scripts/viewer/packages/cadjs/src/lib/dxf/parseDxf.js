@@ -679,9 +679,12 @@ const NON_GEOMETRIC_ENTITY_TYPES = new Set([
 export function stripMtextFormatting(raw) {
   let text = String(raw ?? "");
   // \P is a paragraph break, \~ a hard space; \\ and \{ \} escape literals.
-  text = text.replace(/\\P/gi, "\n").replace(/\\~/g, " ");
-  // Inline property runs: \f...; \H...; \C...; \T...; \Q...; \W...; \A...; — command up to ;
-  text = text.replace(/\\[fFhHcCtTqQwWaA][^;]*;/g, "");
+  // Case-sensitive: lowercase \p is paragraph PROPERTIES (\pxqc;), a different
+  // command. Matching it here consumed only the two characters and left its
+  // payload behind, so \pxqc;PART A engraved as "xqc;PART A".
+  text = text.replace(/\\P/g, "\n").replace(/\\~/g, " ");
+  // Inline property runs: \f...; \H...; \C...; \T...; \Q...; \W...; \A...; \p...; — command up to ;
+  text = text.replace(/\\[fFhHcCtTqQwWaAp][^;]*;/g, "");
   // Stacking \S...^...; renders as the plain parts.
   text = text.replace(/\\S([^^;]*)\^([^;]*);/g, "$1/$2");
   // Grouping braces are structure, not content.
