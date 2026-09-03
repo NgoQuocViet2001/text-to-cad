@@ -19,8 +19,23 @@ export const IMPLICIT_GRAPHICS_LIMITS = Object.freeze({
 export const IMPLICIT_INTERACTION_STEP_BUDGET = 96;
 export const IMPLICIT_INTERACTION_DETAIL = 0.75;
 
+// `Number(null)`, `Number("")` and `Number([])` are all 0, so a settings object
+// that carries a null for an unset field -- which is what `undefined`
+// round-trips as through JSON -- would read as a real 0 and clamp to the
+// minimum instead of falling back to the default. Only a number, or a string
+// that holds one, is a value here.
+function numericOrNaN(value) {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    return Number(value);
+  }
+  return NaN;
+}
+
 function clampNumber(value, fallback, { min = -Infinity, max = Infinity } = {}) {
-  const numericValue = Number(value);
+  const numericValue = numericOrNaN(value);
   const resolvedValue = Number.isFinite(numericValue) ? numericValue : fallback;
   return Math.min(Math.max(resolvedValue, min), max);
 }
@@ -73,8 +88,9 @@ export function implicitGraphicsRenderSettings(value = {}, { interaction = false
     return settings;
   }
   const source = value && typeof value === "object" ? value : {};
-  const requestedStepBudget = Number.isFinite(Number(source.stepBudget))
-    ? Math.max(1, Math.floor(Number(source.stepBudget)))
+  const stepBudgetValue = numericOrNaN(source.stepBudget);
+  const requestedStepBudget = Number.isFinite(stepBudgetValue)
+    ? Math.max(1, Math.floor(stepBudgetValue))
     : IMPLICIT_INTERACTION_STEP_BUDGET;
   return {
     ...settings,
